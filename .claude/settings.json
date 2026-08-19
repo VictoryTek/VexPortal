@@ -1,0 +1,28 @@
+{
+  "effortLevel": "medium",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(nix develop -c cargo build:*)",
+      "Bash(nix develop -c cargo test:*)",
+      "Bash(nix develop -c cargo check:*)",
+      "Bash(nix develop -c cargo clippy:*)",
+      "Bash(nix develop -c cargo fmt:*)",
+      "Bash(nix build:*)",
+      "Bash(nix flake check:*)"
+    ],
+    "deny": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git stash:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo check:*)",
+      "Bash(nix shell nixpkgs#cargo:*)",
+      "Bash(rm -rf:*)"
+    ]
+  }
+}

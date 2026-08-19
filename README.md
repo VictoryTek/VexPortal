@@ -85,10 +85,18 @@ daemon to `cat` a world-readable file would be attack surface for no benefit.
 
 Recipes that would stop at a `[y/N]` are given `VEXOS_ASSUME_YES=1`, and their answers
 are collected up front in a form built from the catalog's parameter list. Until
-vexos-nix honours that variable (see below), those recipes see EOF on stdin and take
-their default answer, which is "no" for every confirmation in the file — so nothing
-hangs, but the trailing "rebuild now?" step does not happen. Cards for those recipes
-carry a **Needs vexos-nix update** badge.
+vexos-nix honours that variable (see below), those recipes run with stdin closed and
+every justfile recipe sets `set -euo pipefail`, so a read that hits EOF either:
+
+- takes its default answer, where the read is guarded with `|| true` — the trailing
+  "reboot now?" in `switch`, "rebuild now?" in `set-hostname` and `fix-flake`. The
+  operation completes; only the optional last step is skipped.
+- stops the recipe with exit 1, where it is not — `reset-defaults`, `restore-plex`,
+  `setup-rdp`, and `update` when `/etc/nixos/vexos-variant` is missing.
+
+Neither case hangs and neither answers on the user's behalf, which is why the form path
+is safe to ship ahead of the justfile work. Cards for the affected recipes carry a
+**Needs vexos-nix update** badge.
 
 Five recipes hold a real conversation — the storage wizards (`create-zfs-pool`,
 `create-mergerfs-pool`, `attach-remote-storage`), `enable <service>`, and

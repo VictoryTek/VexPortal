@@ -55,8 +55,9 @@ pub fn action_row(app: &Rc<App>, window: &Window, recipe: &Recipe) -> adw::Actio
     if recipe.needs_upstream {
         suffix.append(&badge(
             "Needs vexos-nix update",
-            "This recipe still stops for a confirmation prompt. Until vexos-nix honours \
-             VEXOS_ASSUME_YES, the prompt takes its default answer of no.",
+            "This recipe still stops for a prompt. Until vexos-nix honours VEXOS_ASSUME_YES \
+             it will either take the prompt's default answer or stop with an error — it \
+             cannot hang, and it cannot answer for you.",
         ));
     }
     if let Some(pill) = risk_pill(recipe.risk) {
