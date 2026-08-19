@@ -1,0 +1,689 @@
+# VexPortal recipe catalog
+#
+# Curated metadata for the vexos-nix justfile. `just` can enumerate its own recipes,
+# but it keeps only the last comment line as a doc string, has no notion of roles, and
+# cannot say whether a recipe is safe to run — so titles, blurbs, roles, risk levels
+# and argument widgets live here.
+#
+# Keep this in sync with the justfile. `cargo test -p vexportal-catalog` compares the
+# two against /etc/nixos/justfile and fails on drift.
+#
+#   roles  — which VexOS roles surface the recipe. Mirrors the `_require-*-role`
+#            guards in the justfile; server recipes are `[private]` there and hidden
+#            from `just --list`, which is exactly why this file has to carry them.
+#   risk   — safe: reads state only, runs without a polkit prompt.
+#            medium: reversible change, `auth_admin_keep`.
+#            destructive: destroys data or cuts network access, `auth_admin`.
+#   terminal      — interaction cannot be expressed as a form; GUI launches a terminal.
+#   needs_upstream — still prompts in vexos-nix; needs the VEXOS_ASSUME_YES work
+#                    before the form path is fully non-interactive.
+
+# ─────────────────────────── Categories ───────────────────────────
+
+[[category]]
+id = "build-deploy"
+title = "Build & Deploy"
+icon = "software-update-available-symbolic"
+description = "Rebuild this machine, change its role, and pull configuration changes."
+
+[[category]]
+id = "upgrades"
+title = "Upgrades & Rollback"
+icon = "edit-undo-symbolic"
+description = "Move between NixOS generations and check a release upgrade before taking it."
+
+[[category]]
+id = "features"
+title = "Features"
+icon = "preferences-other-symbolic"
+description = "Optional feature modules for this host."
+
+[[category]]
+id = "services"
+title = "Server Services"
+icon = "network-server-symbolic"
+description = "Enable, inspect and restart the service modules on this server."
+
+[[category]]
+id = "storage"
+title = "Storage & Backup"
+icon = "drive-harddisk-symbolic"
+description = "Storage pools, remote mounts, and Plex backup and restore."
+
+[[category]]
+id = "network"
+title = "Network & Remote"
+icon = "network-wireless-symbolic"
+description = "VPN kill switch, Tailscale, remote desktop and SSH keys."
+
+[[category]]
+id = "cache"
+title = "Binary Cache"
+icon = "folder-download-symbolic"
+description = "Attic and Harmonia caches, and the custom kernel build host."
+
+[[category]]
+id = "system"
+title = "System"
+icon = "emblem-system-symbolic"
+description = "Hostname, power, secrets and desktop defaults."
+
+# ─────────────────────── Build & Deploy ───────────────────────
+
+[[recipe]]
+name = "variant"
+title = "Show Active Variant"
+blurb = "Print the role and GPU variant this machine is currently built as."
+icon = "dialog-information-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "safe"
+
+[[recipe]]
+name = "rebuild"
+title = "Rebuild System"
+blurb = "Rebuild and activate NixOS using the variant this machine already runs."
+icon = "view-refresh-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+refresh = ["generation"]
+
+[[recipe]]
+name = "update"
+title = "Update Everything"
+blurb = "Update all flake inputs, then rebuild and switch. Skipped if the new nixpkgs would force large source builds."
+icon = "software-update-available-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+refresh = ["generation", "lock-age"]
+
+[[recipe]]
+name = "update-all"
+title = "Force Update Everything"
+blurb = "Update all flake inputs and rebuild unconditionally, with no cache-safety check. May compile Rust, LLVM or a kernel from source and take hours."
+icon = "software-update-urgent-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+confirm = "This skips the binary-cache check and may compile large packages from source, which can take hours. Use Update Everything for normal daily updates."
+refresh = ["generation", "lock-age"]
+
+[[recipe]]
+name = "deploy"
+title = "Deploy Config Changes"
+blurb = "Pull the latest vexos-nix commit and rebuild, leaving nixpkgs and every other input pinned. The right move when an update reports a cache block."
+icon = "document-save-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+refresh = ["generation"]
+
+[[recipe]]
+name = "build"
+title = "Test Build"
+blurb = "Dry-run build of a role and GPU variant without switching to it. Nothing on this machine changes."
+icon = "utilities-terminal-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "safe"
+
+  [[recipe.params]]
+  name = "role"
+  label = "Role"
+  required = true
+  widget = "choice"
+  choices = ["desktop", "stateless", "htpc", "server", "headless-server", "vanilla"]
+
+  [[recipe.params]]
+  name = "variant"
+  label = "GPU"
+  required = true
+  widget = "choice"
+  choices = ["amd", "nvidia", "nvidia-legacy535", "intel", "vm"]
+
+  [[recipe.params]]
+  name = "flake"
+  label = "Flake override"
+  help = "Leave empty to use the flake this machine is configured with."
+  widget = "text"
+  format = "flake-ref"
+
+[[recipe]]
+name = "switch"
+title = "Switch Role or GPU"
+blurb = "Rebuild and activate a different VexOS role or GPU variant on this machine."
+icon = "object-select-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+confirm = "This rebuilds the system and changes which role and GPU variant this machine boots. Test it first with Test Build if you are unsure."
+refresh = ["variant", "generation"]
+needs_upstream = true
+
+  [[recipe.params]]
+  name = "role"
+  label = "Role"
+  help = "Leave empty to keep the current role."
+  widget = "choice"
+  choices = ["desktop", "stateless", "htpc", "server", "headless-server", "vanilla"]
+
+  [[recipe.params]]
+  name = "variant"
+  label = "GPU"
+  help = "Legacy 535 covers Maxwell, Pascal and Volta cards."
+  widget = "choice"
+  choices = ["amd", "nvidia", "nvidia-legacy535", "intel", "vm"]
+
+  [[recipe.params]]
+  name = "flake"
+  label = "Flake override"
+  widget = "text"
+  format = "flake-ref"
+
+# ───────────────────── Upgrades & Rollback ─────────────────────
+
+[[recipe]]
+name = "upgrade-analysis"
+title = "Analyse Release Upgrade"
+blurb = "Test this configuration against a newer nixpkgs without changing anything: whether it still evaluates, what is missing from the binary cache, and whether the upgrade is safe to take."
+icon = "system-search-symbolic"
+category = "upgrades"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "safe"
+
+  [[recipe.params]]
+  name = "target_version"
+  label = "Target release"
+  help = "A NixOS release such as 26.11."
+  required = true
+  widget = "text"
+  format = "nixos-version"
+
+[[recipe]]
+name = "rollback"
+title = "Roll Back"
+blurb = "Activate the previous NixOS generation and make it the boot default."
+icon = "edit-undo-symbolic"
+category = "upgrades"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+refresh = ["generation"]
+
+[[recipe]]
+name = "rollforward"
+title = "Roll Forward"
+blurb = "Activate the next newer NixOS generation and make it the boot default."
+icon = "edit-redo-symbolic"
+category = "upgrades"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+refresh = ["generation"]
+
+# ──────────────────────────── Features ────────────────────────────
+# `_require-desktop-role` refuses these on stateless and headless-server, because
+# neither role wires /etc/nixos/features.nix into its module set.
+
+[[recipe]]
+name = "features"
+title = "List Features"
+blurb = "Show which optional feature modules are enabled on this host."
+icon = "view-list-symbolic"
+category = "features"
+roles = ["desktop", "htpc", "server"]
+risk = "safe"
+
+[[recipe]]
+name = "enable-feature"
+title = "Enable Feature"
+blurb = "Turn on an optional feature module. Takes effect on the next rebuild."
+icon = "list-add-symbolic"
+category = "features"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+refresh = ["features"]
+
+  [[recipe.params]]
+  name = "feature"
+  label = "Feature"
+  required = true
+  widget = "choice-dynamic"
+  source = "features"
+  extra = ["all"]
+
+[[recipe]]
+name = "disable-feature"
+title = "Disable Feature"
+blurb = "Turn off an optional feature module. Takes effect on the next rebuild."
+icon = "list-remove-symbolic"
+category = "features"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+refresh = ["features"]
+
+  [[recipe.params]]
+  name = "feature"
+  label = "Feature"
+  required = true
+  widget = "choice-dynamic"
+  source = "features"
+  extra = ["all"]
+
+[[recipe]]
+name = "fix-flake"
+title = "Repair Feature Wiring"
+blurb = "Patch /etc/nixos/flake.nix so it loads features.nix on every rebuild. Needed once on hosts whose wrapper predates feature toggles, and safe to re-run."
+icon = "applications-engineering-symbolic"
+category = "features"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+needs_upstream = true
+
+# ────────────────────── Server Services ──────────────────────
+# `_require-server-role` gates these on a variant containing "server", which covers
+# both the GUI server and headless-server roles.
+
+[[recipe]]
+name = "services"
+title = "Service Status"
+blurb = "List every server service module and whether it is enabled on this host."
+icon = "view-list-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[recipe]]
+name = "available-services"
+title = "Service Catalog"
+blurb = "List every server service module VexOS can enable, whether or not it runs here."
+icon = "view-grid-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[recipe]]
+name = "service-info"
+title = "Service Access Info"
+blurb = "Show ports, URLs and setup notes. With no service selected, covers everything currently enabled."
+icon = "dialog-information-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+  [[recipe.params]]
+  name = "service"
+  label = "Service"
+  help = "Leave empty for every enabled service."
+  widget = "choice-dynamic"
+  source = "server-services"
+
+[[recipe]]
+name = "status"
+title = "Check Service"
+blurb = "Show a service's systemd status and whether it answers over HTTP."
+icon = "utilities-system-monitor-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+  [[recipe.params]]
+  name = "service"
+  label = "Service"
+  required = true
+  widget = "choice-dynamic"
+  source = "server-services"
+
+[[recipe]]
+name = "restart"
+title = "Restart Service"
+blurb = "Restart every systemd unit belonging to a service, clearing a prior start-limit failure first."
+icon = "view-refresh-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[recipe.params]]
+  name = "service"
+  label = "Service"
+  required = true
+  widget = "choice-dynamic"
+  source = "server-services"
+
+[[recipe]]
+name = "disable"
+title = "Disable Service"
+blurb = "Turn off a server service module. Takes effect on the next rebuild."
+icon = "list-remove-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[recipe.params]]
+  name = "service"
+  label = "Service"
+  required = true
+  widget = "choice-dynamic"
+  source = "server-services"
+
+[[recipe]]
+name = "enable"
+title = "Enable Service"
+blurb = "Turn on a server service module. Several services ask follow-up questions during setup, so this one runs in a terminal."
+icon = "list-add-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "medium"
+terminal = true
+
+  [[recipe.params]]
+  name = "service"
+  label = "Service"
+  required = true
+  widget = "choice-dynamic"
+  source = "server-services"
+
+[[recipe]]
+name = "enable-plex-pass"
+title = "Enable Plex Pass Transcoding"
+blurb = "Turn on Plex Pass hardware transcoding for an already-enabled Plex install."
+icon = "video-display-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+[[recipe]]
+name = "disable-plex-pass"
+title = "Disable Plex Pass Transcoding"
+blurb = "Turn off Plex Pass hardware transcoding and fall back to software transcoding."
+icon = "video-display-symbolic"
+category = "services"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+# ─────────────────────── Storage & Backup ───────────────────────
+
+[[recipe]]
+name = "backup-now"
+title = "Run Backup Now"
+blurb = "Trigger a restic backup outside the daily timer. Requires the backup module to be enabled."
+icon = "document-save-symbolic"
+category = "storage"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+[[recipe]]
+name = "backup-plex"
+title = "Back Up Plex"
+blurb = "Snapshot Plex's data directory to a single portable tar.gz, suitable for moving to a new server."
+icon = "media-record-symbolic"
+category = "storage"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[recipe.params]]
+  name = "dest"
+  label = "Destination file"
+  help = "Leave empty to write to the default location."
+  widget = "path"
+
+[[recipe]]
+name = "restore-plex"
+title = "Restore Plex"
+blurb = "Restore a Plex backup onto a freshly enabled Plex install. The existing data directory is kept as a timestamped .bak rather than deleted."
+icon = "document-revert-symbolic"
+category = "storage"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "This overwrites /var/lib/plex. The current contents are preserved as a timestamped .bak directory, but Plex must already be enabled and stopped on this server."
+needs_upstream = true
+
+  [[recipe.params]]
+  name = "tarball"
+  label = "Backup file"
+  required = true
+  widget = "path"
+  must_exist = true
+
+[[recipe]]
+name = "create-zfs-pool"
+title = "Create ZFS Pool"
+blurb = "Build a ZFS pool for Proxmox VM and container storage. Walks through disks, topology and a typed confirmation before erasing anything."
+icon = "drive-multidisk-symbolic"
+category = "storage"
+roles = ["server", "headless-server"]
+risk = "destructive"
+terminal = true
+
+[[recipe]]
+name = "create-mergerfs-pool"
+title = "Create Bulk Pool"
+blurb = "Build a mergerfs + SnapRAID bulk pool from mixed-capacity drives and write a declarative storage-pool.nix."
+icon = "drive-multidisk-symbolic"
+category = "storage"
+roles = ["server", "headless-server"]
+risk = "destructive"
+terminal = true
+
+[[recipe]]
+name = "attach-remote-storage"
+title = "Attach Remote Storage"
+blurb = "Mount an NFS or SMB pool exported by another host so local services can use it. Client-side only — nothing on the remote host changes."
+icon = "folder-remote-symbolic"
+category = "storage"
+roles = ["server", "headless-server"]
+risk = "medium"
+terminal = true
+
+# ─────────────────────── Network & Remote ───────────────────────
+
+[[recipe]]
+name = "setup-tailscale"
+title = "Set Up Tailscale"
+blurb = "First-time Tailscale setup: grant operator rights to this user and connect. Prints a URL to authenticate in a browser."
+icon = "network-vpn-symbolic"
+category = "network"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+risk = "medium"
+
+[[recipe]]
+name = "enable-kill-switch"
+title = "Enable VPN Kill Switch"
+blurb = "Block all clearnet egress whenever no VPN tunnel is active."
+icon = "security-high-symbolic"
+category = "network"
+roles = ["desktop", "htpc"]
+risk = "medium"
+
+[[recipe]]
+name = "disable-kill-switch"
+title = "Disable VPN Kill Switch"
+blurb = "Restore normal clearnet egress with no VPN required."
+icon = "security-low-symbolic"
+category = "network"
+roles = ["desktop", "htpc"]
+risk = "destructive"
+confirm = "Traffic will leave this machine outside the VPN tunnel whenever the tunnel is down."
+
+[[recipe]]
+name = "setup-rdp"
+title = "Set Remote Desktop Password"
+blurb = "Set the RDP password for this machine. Stored at /etc/nixos/secrets/rdp-password, never in the Nix store. Rebuild afterwards to activate."
+icon = "dialog-password-symbolic"
+category = "network"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+needs_upstream = true
+
+  [[recipe.params]]
+  name = "password"
+  label = "RDP password"
+  help = "Sent straight to the recipe and never written to a log or the process list."
+  required = true
+  widget = "secret"
+
+[[recipe]]
+name = "ssh"
+title = "Copy SSH Key"
+blurb = "Copy this machine's SSH key to a remote host so future connections need no password."
+icon = "network-transmit-symbolic"
+category = "network"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+
+  [[recipe.params]]
+  name = "target"
+  label = "Target"
+  help = "user@host, for example nimda@10.35.1.50."
+  required = true
+  widget = "text"
+  format = "ssh-target"
+
+# ─────────────────────────── Binary Cache ───────────────────────────
+
+[[recipe]]
+name = "harmonia-info"
+title = "Harmonia Cache Info"
+blurb = "Check the Harmonia binary cache is live and print the substituter configuration to paste on other machines."
+icon = "dialog-information-symbolic"
+category = "cache"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[recipe]]
+name = "attic-push"
+title = "Push to Attic"
+blurb = "Build this repo's custom packages and push them to an Attic cache. Requires an earlier attic login."
+icon = "go-up-symbolic"
+category = "cache"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[recipe.params]]
+  name = "cache"
+  label = "Cache"
+  default = "vexos"
+  widget = "text"
+  format = "slug"
+
+[[recipe]]
+name = "attic-bootstrap"
+title = "Bootstrap Attic Cache"
+blurb = "One-time Attic setup: mint an admin token, create the cache, print its public key, and mint a push-only token for CI. Safe to re-run."
+icon = "folder-new-symbolic"
+category = "cache"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[recipe.params]]
+  name = "cache"
+  label = "Cache"
+  default = "vexos"
+  widget = "text"
+  format = "slug"
+
+[[recipe]]
+name = "kernel-build-status"
+title = "Kernel Build Status"
+blurb = "Show whether a custom kernel build is running, how long it has taken, its last result, and which version is currently served."
+icon = "utilities-system-monitor-symbolic"
+category = "cache"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[recipe]]
+name = "kernel-build-log"
+title = "Kernel Build Log"
+blurb = "Follow a custom kernel build's output live."
+icon = "text-x-generic-symbolic"
+category = "cache"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+  [[recipe.params]]
+  name = "name"
+  label = "Kernel"
+  default = "ogc"
+  widget = "text"
+  format = "slug"
+
+[[recipe]]
+name = "kernel-build-now"
+title = "Build Kernel Now"
+blurb = "Start a custom kernel build instead of waiting for the nightly timer. Takes hours and runs in the background, so it is safe to close this window."
+icon = "system-run-symbolic"
+category = "cache"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[recipe.params]]
+  name = "name"
+  label = "Kernel"
+  default = "ogc"
+  widget = "text"
+  format = "slug"
+
+# ──────────────────────────── System ────────────────────────────
+
+[[recipe]]
+name = "set-hostname"
+title = "Set Hostname"
+blurb = "Change the system hostname. Applies immediately and persists across rebuilds."
+icon = "computer-symbolic"
+category = "system"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+refresh = ["hostname"]
+needs_upstream = true
+
+  [[recipe.params]]
+  name = "name"
+  label = "Hostname"
+  required = true
+  widget = "text"
+  format = "hostname"
+
+[[recipe]]
+name = "secrets-init"
+title = "Set Up Encrypted Secrets"
+blurb = "Guided one-time setup for the sops-nix secrets backend. Generates this host's age key and prints the .sops.yaml snippet to add to the repo."
+icon = "dialog-password-symbolic"
+category = "system"
+roles = ["server", "headless-server"]
+risk = "medium"
+terminal = true
+
+[[recipe]]
+name = "reset-defaults"
+title = "Reset Desktop to Defaults"
+blurb = "Clear the user dconf database so every GNOME setting falls back to the VexOS defaults. Best run from a terminal outside a GNOME session."
+icon = "edit-clear-all-symbolic"
+category = "system"
+roles = ["desktop", "htpc", "server", "stateless"]
+risk = "destructive"
+confirm = "Every GNOME customisation on this account is lost — extensions, app folders, keyboard shortcuts and appearance all return to the VexOS defaults."
+needs_upstream = true
+
+[[recipe]]
+name = "reboot"
+title = "Reboot"
+blurb = "Restart this machine immediately."
+icon = "system-reboot-symbolic"
+category = "system"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+confirm = "This machine restarts immediately. Unsaved work in other applications is lost."
+
+[[recipe]]
+name = "shutdown"
+title = "Shut Down"
+blurb = "Power off this machine immediately."
+icon = "system-shutdown-symbolic"
+category = "system"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+confirm = "This machine powers off immediately. Unsaved work in other applications is lost."
+
+# ─────────────────────────── Not surfaced ───────────────────────────
+# Public justfile recipes VexPortal deliberately leaves to the CLI. Listed here so the
+# drift check stays quiet about them rather than being switched off entirely.

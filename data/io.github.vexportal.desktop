@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=VexPortal
+Comment=Manage this VexOS system
+Exec=vexportal
+Icon=io.github.vexportal
+Terminal=false
+Type=Application
+Categories=System;Settings;
+Keywords=vexos;nixos;nix;rebuild;system;portal;just;
+StartupNotify=true

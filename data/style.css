@@ -1,0 +1,80 @@
+/* VexPortal — a thin layer over libadwaita.
+ *
+ * The accent is VexOS magenta (ANSI_COLOR="1;35" in /etc/os-release), applied only
+ * where it carries meaning: the role badge and the risk pips. Everything else stays
+ * on libadwaita's own tokens so the app follows the system light/dark theme and any
+ * accent colour the user has chosen.
+ */
+
+:root {
+  --vex-magenta: #c74ded;
+  --vex-magenta-dim: #a63bc4;
+}
+
+/* ── Dashboard ────────────────────────────────────────────────── */
+
+.vex-role-badge {
+  background: linear-gradient(135deg, var(--vex-magenta), var(--vex-magenta-dim));
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 2px 12px;
+  font-weight: bold;
+}
+
+.vex-variant {
+  font-family: monospace;
+  opacity: 0.7;
+}
+
+.vex-hero {
+  padding: 18px;
+  border-radius: 12px;
+  background-color: alpha(currentColor, 0.04);
+}
+
+/* ── Risk pips ────────────────────────────────────────────────── */
+/* Colour alone never carries the meaning: each pip has a tooltip and destructive
+ * actions also get a text confirmation before anything runs. */
+
+.vex-risk {
+  border-radius: 9999px;
+  padding: 1px 9px;
+  font-size: 0.8em;
+  font-weight: bold;
+}
+
+.vex-risk.safe {
+  background-color: alpha(@success_color, 0.15);
+  color: @success_color;
+}
+
+.vex-risk.medium {
+  background-color: alpha(@warning_color, 0.15);
+  color: @warning_color;
+}
+
+.vex-risk.destructive {
+  background-color: alpha(@error_color, 0.15);
+  color: @error_color;
+}
+
+.vex-badge {
+  border-radius: 9999px;
+  padding: 1px 9px;
+  font-size: 0.8em;
+  background-color: alpha(currentColor, 0.1);
+  opacity: 0.8;
+}
+
+/* ── Run view ─────────────────────────────────────────────────── */
+
+.vex-log {
+  font-family: monospace;
+  font-size: 0.9em;
+  padding: 12px;
+}
+
+.vex-log-view {
+  background-color: alpha(currentColor, 0.03);
+  border-radius: 8px;
+}

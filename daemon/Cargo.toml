@@ -1,0 +1,24 @@
+[package]
+name = "vexportal-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Privileged backend for VexPortal"
+
+[[bin]]
+name = "vexportal-daemon"
+path = "src/main.rs"
+
+[dependencies]
+vexportal-catalog.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+env_logger.workspace = true
+zbus.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+libc = "0.2"
+uuid = { version = "1", features = ["v4"] }

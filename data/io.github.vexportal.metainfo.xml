@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.vexportal</id>
+  <name>VexPortal</name>
+  <summary>Manage this VexOS system</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      VexPortal is a graphical front end for the vexos-nix justfile. It rebuilds the
+      system, switches roles and GPU variants, toggles optional features, manages
+      server service modules, and moves between NixOS generations — showing only the
+      operations that apply to the role this machine is actually built as.
+    </p>
+    <p>
+      Privileged work runs through a small system daemon guarded by polkit, so the
+      application itself never runs as root and every operation is recorded in the
+      journal.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.vexportal.desktop</launchable>
+  <url type="homepage">https://github.com/VictoryTek/VexPortal</url>
+  <url type="bugtracker">https://github.com/VictoryTek/VexPortal/issues</url>
+  <developer id="io.github.victorytek">
+    <name>VictoryTek</name>
+  </developer>
+
+  <releases>
+    <release version="0.1.0" date="2026-08-19">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

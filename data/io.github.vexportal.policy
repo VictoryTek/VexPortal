@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+    "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+    "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+
+  <vendor>VexPortal</vendor>
+  <vendor_url>https://github.com/VictoryTek/VexPortal</vendor_url>
+  <icon_name>io.github.vexportal</icon_name>
+
+  <!--
+    Three tiers, matching the `risk` field in the VexPortal catalog.
+
+    Recipes that only read state run without a prompt: making a user authenticate to
+    answer "which GPU variant am I running?" trains them to click through prompts,
+    which is worse for security than not asking.
+  -->
+
+  <action id="io.github.vexportal.run-readonly">
+    <description>Read VexOS system state</description>
+    <message>VexPortal needs to read this machine's VexOS configuration.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.vexportal.run-recipe">
+    <description>Manage this VexOS system</description>
+    <message>VexPortal needs administrator privileges to change this machine's configuration.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Destroys data or removes a network protection. Never cached: each run asks again. -->
+  <action id="io.github.vexportal.run-destructive">
+    <description>Run a destructive VexOS operation</description>
+    <message>VexPortal needs administrator privileges to run an operation that destroys data or disables a network protection.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.vexportal.cancel">
+    <description>Cancel a running VexOS operation</description>
+    <message>VexPortal needs privileges to cancel an operation in progress.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+</policyconfig>
