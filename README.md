@@ -15,6 +15,33 @@ nix build .#default                      # package, runs tests in the sandbox
 nix develop -c cargo test --workspace
 ```
 
+## Install / Run
+
+Run it directly without installing anything:
+
+```sh
+nix run github:VictoryTek/VexPortal        # from anywhere
+nix run .                                  # from a local checkout
+```
+
+Install it into your user profile:
+
+```sh
+nix profile install github:VictoryTek/VexPortal
+```
+
+Or add it to a NixOS system via the flake's module, alongside the polkit
+actions, D-Bus policy, and the `vexportal-daemon` it depends on:
+
+```nix
+{
+  inputs.vexportal.url = "github:VictoryTek/VexPortal";
+
+  # in your system configuration:
+  imports = [ inputs.vexportal.nixosModules.default ];
+}
+```
+
 ## Layout
 
 ```
