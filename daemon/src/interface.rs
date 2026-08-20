@@ -104,15 +104,15 @@ impl Daemon {
         }
 
         let job_id = Uuid::new_v4().to_string();
-        audit::started(&job_id, &caller, uid_of(connection, &caller).await, &invocation);
+        audit::started(
+            &job_id,
+            &caller,
+            uid_of(connection, &caller).await,
+            &invocation,
+        );
         self.idle.lock().await.mark_active();
 
-        let handle = executor::spawn(
-            job_id.clone(),
-            invocation,
-            &self.config,
-            connection.clone(),
-        );
+        let handle = executor::spawn(job_id.clone(), invocation, &self.config, connection.clone());
         self.jobs.lock().await.insert(job_id.clone(), handle);
 
         Ok(job_id)

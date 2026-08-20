@@ -25,9 +25,15 @@ pub enum Command {
 #[derive(Debug, Clone)]
 pub enum Event {
     /// The daemon accepted a request and gave it a job id.
-    Started { request_id: u64, job_id: String },
+    Started {
+        request_id: u64,
+        job_id: String,
+    },
     /// The request never started: validation, polkit, or the daemon being unreachable.
-    Failed { request_id: u64, message: String },
+    Failed {
+        request_id: u64,
+        message: String,
+    },
     Output {
         job_id: String,
         stream: u32,
@@ -107,7 +113,12 @@ async fn serve(commands: async_channel::Receiver<Command>, events: async_channel
         Ok(connection) => connection,
         Err(e) => {
             error!("could not connect to the system bus: {e}");
-            drain_with_error(commands, events, format!("cannot reach the system bus: {e}")).await;
+            drain_with_error(
+                commands,
+                events,
+                format!("cannot reach the system bus: {e}"),
+            )
+            .await;
             return;
         }
     };

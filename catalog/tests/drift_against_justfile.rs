@@ -61,7 +61,11 @@ fn catalog_matches_the_installed_justfile() {
         eprintln!(
             "note: this host's justfile predates {} catalog {}:\n{}",
             host_behind.len(),
-            if host_behind.len() == 1 { "entry" } else { "entries" },
+            if host_behind.len() == 1 {
+                "entry"
+            } else {
+                "entries"
+            },
             host_behind
                 .iter()
                 .map(|d| format!("  - {}", d.describe()))

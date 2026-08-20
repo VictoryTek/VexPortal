@@ -176,7 +176,8 @@ impl RunPage {
         if exit_code == 0 {
             self.status.set_text("Finished");
         } else {
-            self.status.set_text(&format!("Failed (exit code {exit_code})"));
+            self.status
+                .set_text(&format!("Failed (exit code {exit_code})"));
             self.banner
                 .set_title("This operation did not complete. The output above says why.");
             self.banner.set_revealed(true);
@@ -244,14 +245,14 @@ impl RunPage {
     /// the view back down while someone is reading earlier output is maddening.
     fn scroll_to_end(&self) {
         let adjustment = self.scroller.vadjustment();
-        let at_bottom =
-            adjustment.value() + adjustment.page_size() >= adjustment.upper() - 64.0;
+        let at_bottom = adjustment.value() + adjustment.page_size() >= adjustment.upper() - 64.0;
         if !at_bottom {
             return;
         }
-        let mark = self.buffer.create_mark(None, &self.buffer.end_iter(), false);
-        self.view
-            .scroll_to_mark(&mark, 0.0, false, 0.0, 0.0);
+        let mark = self
+            .buffer
+            .create_mark(None, &self.buffer.end_iter(), false);
+        self.view.scroll_to_mark(&mark, 0.0, false, 0.0, 0.0);
         self.buffer.delete_mark(&mark);
     }
 }
@@ -290,7 +291,11 @@ fn register_tags(buffer: &gtk::TextBuffer) {
         }
     }
 
-    for (name, bold, dim) in [("-bold", true, false), ("-dim", false, true), ("-bold-dim", true, true)] {
+    for (name, bold, dim) in [
+        ("-bold", true, false),
+        ("-dim", false, true),
+        ("-bold-dim", true, true),
+    ] {
         let tag = gtk::TextTag::builder().name(name).build();
         if bold {
             tag.set_weight(700);

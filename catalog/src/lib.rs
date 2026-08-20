@@ -339,7 +339,11 @@ impl Catalog {
     pub fn categories_for_role(&self, role: Role) -> Vec<&Category> {
         self.categories
             .iter()
-            .filter(|c| self.recipes.iter().any(|r| r.category == c.id && r.applies_to(role)))
+            .filter(|c| {
+                self.recipes
+                    .iter()
+                    .any(|r| r.category == c.id && r.applies_to(role))
+            })
             .collect()
     }
 }

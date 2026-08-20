@@ -25,7 +25,13 @@ pub async fn check(connection: &Connection, caller: &str, action: &str) -> Resul
 
     const ALLOW_USER_INTERACTION: u32 = 1;
     let result = polkit
-        .check_authorization(&subject, action, &HashMap::new(), ALLOW_USER_INTERACTION, "")
+        .check_authorization(
+            &subject,
+            action,
+            &HashMap::new(),
+            ALLOW_USER_INTERACTION,
+            "",
+        )
         .await
         .map_err(|e| format!("polkit CheckAuthorization failed: {e}"))?;
 

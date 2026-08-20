@@ -24,7 +24,7 @@
 id = "build-deploy"
 title = "Build & Deploy"
 icon = "software-update-available-symbolic"
-description = "Rebuild this machine, change its role, and pull configuration changes."
+description = "Rebuild this machine, or change its role and GPU variant."
 
 [[category]]
 id = "upgrades"
@@ -84,37 +84,6 @@ name = "rebuild"
 title = "Rebuild System"
 blurb = "Rebuild and activate NixOS using the variant this machine already runs."
 icon = "view-refresh-symbolic"
-category = "build-deploy"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
-risk = "medium"
-refresh = ["generation"]
-
-[[recipe]]
-name = "update"
-title = "Update Everything"
-blurb = "Update all flake inputs, then rebuild and switch. Skipped if the new nixpkgs would force large source builds."
-icon = "software-update-available-symbolic"
-category = "build-deploy"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
-risk = "medium"
-refresh = ["generation", "lock-age"]
-
-[[recipe]]
-name = "update-all"
-title = "Force Update Everything"
-blurb = "Update all flake inputs and rebuild unconditionally, with no cache-safety check. May compile Rust, LLVM or a kernel from source and take hours."
-icon = "software-update-urgent-symbolic"
-category = "build-deploy"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
-risk = "medium"
-confirm = "This skips the binary-cache check and may compile large packages from source, which can take hours. Use Update Everything for normal daily updates."
-refresh = ["generation", "lock-age"]
-
-[[recipe]]
-name = "deploy"
-title = "Deploy Config Changes"
-blurb = "Pull the latest vexos-nix commit and rebuild, leaving nixpkgs and every other input pinned. The right move when an update reports a cache block."
-icon = "document-save-symbolic"
 category = "build-deploy"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
@@ -687,3 +656,15 @@ confirm = "This machine powers off immediately. Unsaved work in other applicatio
 # ─────────────────────────── Not surfaced ───────────────────────────
 # Public justfile recipes VexPortal deliberately leaves to the CLI. Listed here so the
 # drift check stays quiet about them rather than being switched off entirely.
+
+[[excluded]]
+name = "update"
+reason = "Updates and upgrades are handled by Up, not VexPortal."
+
+[[excluded]]
+name = "update-all"
+reason = "Updates and upgrades are handled by Up, not VexPortal."
+
+[[excluded]]
+name = "deploy"
+reason = "Updates and upgrades are handled by Up, not VexPortal."

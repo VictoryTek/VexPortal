@@ -19,9 +19,7 @@ fn main() -> glib::ExitCode {
     gio::resources_register_include!("compiled.gresource")
         .expect("the compiled gresource bundle should be embedded in the binary");
 
-    let application = adw::Application::builder()
-        .application_id(APP_ID)
-        .build();
+    let application = adw::Application::builder().application_id(APP_ID).build();
 
     application.connect_startup(|_| {
         adw::init().expect("libadwaita should initialise");

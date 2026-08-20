@@ -97,7 +97,10 @@ fn is_ssh_target(v: &str) -> bool {
         }
     }
     // Host is either a dotted name or an IP literal; both reduce to labels split on `.`.
-    !host.is_empty() && host.split('.').all(|label| !label.is_empty() && is_hostname(label))
+    !host.is_empty()
+        && host
+            .split('.')
+            .all(|label| !label.is_empty() && is_hostname(label))
 }
 
 fn is_abs_path(v: &str) -> bool {
@@ -127,7 +130,8 @@ fn is_flake_ref(v: &str) -> bool {
     );
     (path_like || url_like)
         && v.chars().all(|c| {
-            c.is_ascii_alphanumeric() || matches!(c, '.' | '/' | '-' | '_' | ':' | '+' | '?' | '=' | '&' | '#')
+            c.is_ascii_alphanumeric()
+                || matches!(c, '.' | '/' | '-' | '_' | ':' | '+' | '?' | '=' | '&' | '#')
         })
 }
 
@@ -187,7 +191,9 @@ mod tests {
     fn ssh_targets() {
         assert!(Format::SshTarget.validate("nimda@10.35.1.50").is_ok());
         assert!(Format::SshTarget.validate("vexos-office").is_ok());
-        assert!(Format::SshTarget.validate("nimda@vexos-vmc.tailbd686.ts.net").is_ok());
+        assert!(Format::SshTarget
+            .validate("nimda@vexos-vmc.tailbd686.ts.net")
+            .is_ok());
         assert!(Format::SshTarget.validate("@host").is_err());
         assert!(Format::SshTarget.validate("user@").is_err());
     }
@@ -195,7 +201,9 @@ mod tests {
     #[test]
     fn absolute_paths() {
         assert!(Format::AbsPath.validate("/var/lib/plex.tar.gz").is_ok());
-        assert!(Format::AbsPath.validate("/home/nimda/My Backup.tar.gz").is_ok());
+        assert!(Format::AbsPath
+            .validate("/home/nimda/My Backup.tar.gz")
+            .is_ok());
         assert!(Format::AbsPath.validate("relative/path").is_err());
         assert!(Format::AbsPath.validate("/a/../../etc").is_err());
     }
@@ -212,7 +220,9 @@ mod tests {
     fn flake_refs() {
         assert!(Format::FlakeRef.validate(".").is_ok());
         assert!(Format::FlakeRef.validate("/etc/nixos").is_ok());
-        assert!(Format::FlakeRef.validate("github:VictoryTek/vexos-nix").is_ok());
+        assert!(Format::FlakeRef
+            .validate("github:VictoryTek/vexos-nix")
+            .is_ok());
         assert!(Format::FlakeRef.validate("rm -rf /").is_err());
     }
 }

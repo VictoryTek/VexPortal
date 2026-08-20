@@ -178,19 +178,44 @@ fn spawn_terminal(command: &str) -> bool {
     let candidates: [(&str, Vec<String>); 4] = [
         (
             "kgx",
-            vec!["--working-directory".into(), "/etc/nixos".into(), "--".into(), "bash".into(), "-lc".into(), format!("{command}; exec bash")],
+            vec![
+                "--working-directory".into(),
+                "/etc/nixos".into(),
+                "--".into(),
+                "bash".into(),
+                "-lc".into(),
+                format!("{command}; exec bash"),
+            ],
         ),
         (
             "gnome-terminal",
-            vec!["--working-directory=/etc/nixos".into(), "--".into(), "bash".into(), "-lc".into(), format!("{command}; exec bash")],
+            vec![
+                "--working-directory=/etc/nixos".into(),
+                "--".into(),
+                "bash".into(),
+                "-lc".into(),
+                format!("{command}; exec bash"),
+            ],
         ),
         (
             "ptyxis",
-            vec!["--working-directory".into(), "/etc/nixos".into(), "--".into(), "bash".into(), "-lc".into(), format!("{command}; exec bash")],
+            vec![
+                "--working-directory".into(),
+                "/etc/nixos".into(),
+                "--".into(),
+                "bash".into(),
+                "-lc".into(),
+                format!("{command}; exec bash"),
+            ],
         ),
         (
             "xterm",
-            vec!["-e".into(), "bash".into(), "-lc".into(), format!("cd /etc/nixos && {command}; exec bash")],
+            vec![
+                "-e".into(),
+                "bash".into(),
+                "-lc".into(),
+                format!("cd /etc/nixos && {command}; exec bash"),
+            ],
         ),
     ];
 

@@ -171,7 +171,10 @@ fn choice_row(param: &Param, choices: Vec<String>) -> (gtk::Widget, Field) {
             row.set_selected(index as u32);
         }
     }
-    (row.upcast_ref::<gtk::Widget>().clone(), Field::Choice(row, choices, optional))
+    (
+        row.upcast_ref::<gtk::Widget>().clone(),
+        Field::Choice(row, choices, optional),
+    )
 }
 
 fn path_row(param: &Param, window: &Window) -> (gtk::Widget, Field) {

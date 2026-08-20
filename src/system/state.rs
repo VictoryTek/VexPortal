@@ -65,7 +65,10 @@ fn read_hostname() -> Option<String> {
 fn read_generation() -> Option<u32> {
     let target = std::fs::read_link(SYSTEM_PROFILE).ok()?;
     let name = target.file_name()?.to_str()?;
-    name.strip_prefix("system-")?.strip_suffix("-link")?.parse().ok()
+    name.strip_prefix("system-")?
+        .strip_suffix("-link")?
+        .parse()
+        .ok()
 }
 
 fn reboot_pending() -> bool {

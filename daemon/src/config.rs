@@ -86,9 +86,12 @@ mod tests {
 
     #[test]
     fn accepts_a_justfile_override() {
-        let config =
-            Config::from_args(["vexportal-daemon".into(), "--justfile".into(), "/tmp/j".into()])
-                .unwrap();
+        let config = Config::from_args([
+            "vexportal-daemon".into(),
+            "--justfile".into(),
+            "/tmp/j".into(),
+        ])
+        .unwrap();
         assert_eq!(config.justfile, Path::new("/tmp/j"));
     }
 

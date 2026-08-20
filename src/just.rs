@@ -123,7 +123,11 @@ impl JustfileFacts {
         }
 
         let missing = self.missing();
-        let defects: Vec<&Drift> = self.drift.iter().filter(|d| d.is_catalog_defect()).collect();
+        let defects: Vec<&Drift> = self
+            .drift
+            .iter()
+            .filter(|d| d.is_catalog_defect())
+            .collect();
 
         // A host that simply has not rebuilt recently is a different story from a
         // catalog that no longer matches the justfile, and saying so is the difference

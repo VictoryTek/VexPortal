@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 /// The actions worth a shortcut on the front page, in order. Anything absent from the
 /// current role's catalog is skipped.
-const QUICK_ACTIONS: [&str; 4] = ["rebuild", "update", "rollback", "variant"];
+const QUICK_ACTIONS: [&str; 4] = ["rebuild", "switch", "rollback", "variant"];
 
 pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     let page = adw::PreferencesPage::new();
