@@ -33,16 +33,44 @@ nix profile install github:VictoryTek/VexPortal
 
 To actually run recipes, add it to a NixOS system via the flake's module,
 which wires up the polkit actions, D-Bus policy, and the `vexportal-daemon`
-it depends on:
+it depends on. In your system's `flake.nix`:
 
 ```nix
 {
   inputs.vexportal.url = "github:VictoryTek/VexPortal";
 
-  # in your system configuration:
-  imports = [ inputs.vexportal.nixosModules.default ];
+  outputs = { self, nixpkgs, vexportal, ... }: {
+    nixosConfigurations.<hostname> = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        vexportal.nixosModules.default
+        { programs.vexportal.enable = true; }
+        ./configuration.nix
+      ];
+    };
+  };
 }
 ```
+
+Then rebuild the system so the daemon, D-Bus policy, and polkit actions are
+actually installed — `programs.vexportal.enable = true;` on its own changes
+nothing until this runs:
+
+```sh
+# Permanent: installs it and sets it as the boot default.
+sudo nixos-rebuild switch --flake .#<hostname>
+
+# Temporary, for testing: activates it right now, but reverts to the
+# previous generation on the next reboot — nothing is committed.
+sudo nixos-rebuild test --flake .#<hostname>
+
+# To undo a `test` activation immediately instead of waiting for a reboot:
+sudo nixos-rebuild switch --rollback
+```
+
+After either `switch` or `test`, `vexportal-daemon` is D-Bus-activated on
+demand — you don't start it by hand. Launch the GUI as usual
+(`vexportal`, or from the app grid) and actions will work.
 
 ## Layout
 
