@@ -17,21 +17,23 @@ nix develop -c cargo test --workspace
 
 ## Install / Run
 
-Run it directly without installing anything:
+`nix run` and `nix profile install` only build and launch the `vexportal` GUI
+binary — they do not install the `vexportal-daemon` systemd unit, its D-Bus
+activation file, or the polkit actions. Without those, the window opens but
+every action fails with "The name is not activatable", because there is no
+daemon on the system bus for it to call. These two methods are for browsing
+the UI only:
 
 ```sh
 nix run github:VictoryTek/VexPortal        # from anywhere
 nix run .                                  # from a local checkout
-```
 
-Install it into your user profile:
-
-```sh
 nix profile install github:VictoryTek/VexPortal
 ```
 
-Or add it to a NixOS system via the flake's module, alongside the polkit
-actions, D-Bus policy, and the `vexportal-daemon` it depends on:
+To actually run recipes, add it to a NixOS system via the flake's module,
+which wires up the polkit actions, D-Bus policy, and the `vexportal-daemon`
+it depends on:
 
 ```nix
 {
