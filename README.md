@@ -31,35 +31,6 @@ nix run .                                  # from a local checkout
 nix profile install github:VictoryTek/VexPortal
 ```
 
-To actually run recipes, add it to a NixOS system via the flake's module,
-which wires up the polkit actions, D-Bus policy, and the `vexportal-daemon`
-it depends on. In your system's `flake.nix`:
-
-```nix
-{
-  inputs.vexportal.url = "github:VictoryTek/VexPortal";
-
-  outputs = { self, nixpkgs, vexportal, ... }: {
-    nixosConfigurations.<hostname> = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        vexportal.nixosModules.default
-        { programs.vexportal.enable = true; }
-        ./configuration.nix
-      ];
-    };
-  };
-}
-```
-
-After adding the input, lock it so `flake.lock` picks up the new
-`vexportal` entry — flakes refuse to build against an input that isn't
-locked yet:
-
-```sh
-nix flake lock --update-input vexportal
-```
-
 ### vexos-nix hosts
 
 If your `/etc/nixos/flake.nix` is the [vexos-nix](https://github.com/VictoryTek/vexos-nix)
