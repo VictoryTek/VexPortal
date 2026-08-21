@@ -52,6 +52,36 @@ it depends on. In your system's `flake.nix`:
 }
 ```
 
+After adding the input, lock it so `flake.lock` picks up the new
+`vexportal` entry — flakes refuse to build against an input that isn't
+locked yet:
+
+```sh
+nix flake lock --update-input vexportal
+```
+
+### vexos-nix hosts
+
+If your `/etc/nixos/flake.nix` is the [vexos-nix](https://github.com/VictoryTek/vexos-nix)
+template wrapper (`inputs.vexos-nix`, an `outputs = { self, vexos-nix, nixpkgs }:`
+lambda, and a shared `hardwareModule` line in every variant's `modules` list),
+this `sed` wires VexPortal into all variants in one shot instead of hand-editing:
+
+```sh
+sudo sed -i \
+  -e '/vexos-nix\.url = "github:VictoryTek\/vexos-nix";/a\    vexportal.url = "github:VictoryTek/VexPortal";' \
+  -e 's/outputs = { self, vexos-nix, nixpkgs }:/outputs = { self, vexos-nix, nixpkgs, vexportal }:/' \
+  -e '/^          hardwareModule$/a\          vexportal.nixosModules.default\n          { programs.vexportal.enable = true; }' \
+  /etc/nixos/flake.nix
+
+nix flake lock --update-input vexportal --flake /etc/nixos
+sudo nixos-rebuild switch --flake /etc/nixos#$(cat /etc/nixos/vexos-variant)
+```
+
+This edits `/etc/nixos/flake.nix` in place, so diff or back it up first if you
+want to review the change before rebuilding. It's also local-only: a fresh
+`curl` of `etc-nixos-flake.nix` from vexos-nix will overwrite it.
+
 Then rebuild the system so the daemon, D-Bus policy, and polkit actions are
 actually installed — `programs.vexportal.enable = true;` on its own changes
 nothing until this runs:
