@@ -33,25 +33,20 @@ nix profile install github:VictoryTek/VexPortal
 
 ### vexos-nix hosts
 
-If your `/etc/nixos/flake.nix` is the [vexos-nix](https://github.com/VictoryTek/vexos-nix)
-template wrapper (`inputs.vexos-nix`, an `outputs = { self, vexos-nix, nixpkgs }:`
-lambda, and a shared `hardwareModule` line in every variant's `modules` list),
-this `sed` wires VexPortal into all variants in one shot instead of hand-editing:
+If you're on a [vexos-nix](https://github.com/VictoryTek/vexos-nix) host built
+from the `desktop`, `htpc`, `stateless`, or `server` role, **skip the steps
+above** — vexos-nix's own flake already declares `inputs.vexportal` and
+imports `vexportal.nixosModules.default` with `programs.vexportal.enable = true;`
+for those roles (see `vexportalModule` in vexos-nix's `flake.nix`). Adding it
+again in your system flake declares `programs.vexportal.enable` twice and
+`nixos-rebuild` fails with "already declared". Just rebuild:
 
 ```sh
-sudo sed -i \
-  -e '/vexos-nix\.url = "github:VictoryTek\/vexos-nix";/a\    vexportal.url = "github:VictoryTek/VexPortal";' \
-  -e 's/outputs = { self, vexos-nix, nixpkgs }:/outputs = { self, vexos-nix, nixpkgs, vexportal }:/' \
-  -e '/^          hardwareModule$/a\          vexportal.nixosModules.default\n          { programs.vexportal.enable = true; }' \
-  /etc/nixos/flake.nix
-
-nix flake lock --update-input vexportal --flake /etc/nixos
 sudo nixos-rebuild switch --flake /etc/nixos#$(cat /etc/nixos/vexos-variant)
 ```
 
-This edits `/etc/nixos/flake.nix` in place, so diff or back it up first if you
-want to review the change before rebuilding. It's also local-only: a fresh
-`curl` of `etc-nixos-flake.nix` from vexos-nix will overwrite it.
+`headless-server` and `vanilla` roles don't get it (no display), and the
+manual steps above are the way to add it there if wanted.
 
 Then rebuild the system so the daemon, D-Bus policy, and polkit actions are
 actually installed — `programs.vexportal.enable = true;` on its own changes
@@ -85,7 +80,8 @@ data/        polkit actions, D-Bus policy, desktop entry, icon, stylesheet
 
 ## Status
 
-Not yet wired into vexos-nix — see `docs/` for the integration plan.
+Wired into vexos-nix for the desktop, htpc, stateless, and server roles — see
+`docs/` for the integration plan and remaining work.
 
 ## License
 
