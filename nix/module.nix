@@ -41,6 +41,16 @@ in
     # The polkit actions come from $out/share/polkit-1/actions via systemPackages.
     security.polkit.enable = true;
 
+    # gtk4-update-icon-cache in package.nix's postInstall only rebuilds the cache
+    # bundled inside VexPortal's own store path; it cannot touch the aggregated
+    # /run/current-system/sw/share/icons/hicolor that GNOME Shell's app grid actually
+    # reads. gtk.iconCache.enable defaults to services.xserver.enable, which is false on
+    # Wayland-only GNOME hosts (services.desktopManager.gnome.enable without
+    # services.xserver.enable), so without this the app grid keeps showing a stale or
+    # generic icon even though the correct one ships in the package. mkDefault so a host
+    # with its own opinion on this option still wins.
+    gtk.iconCache.enable = lib.mkDefault true;
+
     systemd.services.vexportal-daemon = {
       description = "VexPortal privileged backend";
       documentation = [ "https://github.com/VictoryTek/VexPortal" ];
