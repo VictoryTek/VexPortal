@@ -151,6 +151,53 @@ needs_upstream = true
   widget = "text"
   format = "flake-ref"
 
+  [[recipe.params]]
+  name = "de"
+  label = "Desktop environment"
+  help = "Desktop role only. Left unchanged, the rebuild stops at the justfile's prompt."
+  widget = "choice"
+  choices = ["gnome", "cosmic", "hyprland"]
+
+  [[recipe.params]]
+  name = "vmp"
+  label = "VM platform"
+  help = "VM GPU variant only. Left unchanged, the rebuild stops at the justfile's prompt."
+  widget = "choice"
+  choices = ["qemu", "virtualbox"]
+
+# Limine migration is two recipes and a reboot in between: the first installs Limine
+# alongside the existing systemd-boot entry, the second removes the fallback once the
+# machine has demonstrably booted the new one. `_confirm` honours VEXOS_ASSUME_YES, so
+# the daemon answers the justfile's own prompt — the warning has to be here instead.
+[[recipe]]
+name = "switch-bootloader"
+title = "Migrate to Limine"
+blurb = "Install the Limine bootloader alongside the current systemd-boot entry and boot it first. UEFI only; nothing is removed."
+icon = "drive-harddisk-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+risk = "medium"
+confirm = "This patches /etc/nixos/flake.nix, rebuilds the system, and makes Limine the first UEFI boot entry. The systemd-boot entry stays as a fallback. Reboot and confirm Limine works before running the cleanup step."
+refresh = ["generation"]
+
+  [[recipe.params]]
+  name = "target"
+  label = "Bootloader"
+  help = "Limine is the only supported migration target."
+  required = true
+  widget = "choice"
+  choices = ["limine"]
+
+[[recipe]]
+name = "switch-bootloader-cleanup"
+title = "Finish Limine Migration"
+blurb = "Remove the old systemd-boot entry and its leftover ESP files after Limine has booted successfully."
+icon = "edit-clear-all-symbolic"
+category = "build-deploy"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+risk = "destructive"
+confirm = "This deletes the systemd-boot fallback entry and its files. It only runs if this session actually booted via Limine, and there is no way back to systemd-boot without reinstalling it."
+
 # ───────────────────── Upgrades & Rollback ─────────────────────
 
 [[recipe]]
