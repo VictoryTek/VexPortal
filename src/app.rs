@@ -1,15 +1,15 @@
 //! Application state, and the wiring between the GUI and the daemon.
 
-use crate::dbus_client::{self, Client, Event};
+use crate::dbus_client::{Client, Event};
+use crate::job::{Job, Router};
 use crate::just::JustfileFacts;
 use crate::system::{SystemState, Variant};
-use crate::ui::run_page::RunPage;
 use crate::ui::window::Window;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use vexportal_catalog::{Catalog, Category, Recipe, Role};
+use vexportal_catalog::{Action, Catalog, Page, Role};
 
 /// Everything the widgets need, shared by clone.
 pub struct App {
@@ -20,38 +20,43 @@ pub struct App {
     pub variant: Option<Variant>,
     pub state: RefCell<SystemState>,
     pub client: Client,
-    /// Run views waiting for the daemon to accept their request.
-    pending: RefCell<HashMap<u64, RunPage>>,
-    /// Run views attached to a job id.
-    running: RefCell<HashMap<String, RunPage>>,
-    next_request_id: RefCell<u64>,
+    router: RefCell<Router<Rc<Job>>>,
+    /// Every job started this session, oldest first.
+    jobs: RefCell<Vec<Rc<Job>>>,
+    next_request_id: Cell<u64>,
     pub window: RefCell<Option<Window>>,
 }
 
 impl App {
-    /// Which role's recipes to show. A machine that has never been built shows the
+    /// Which role's actions to show. A machine that has never been built shows the
     /// desktop set, so the window is populated behind the "not built yet" notice
     /// rather than empty.
     pub fn role(&self) -> Role {
         self.variant.as_ref().map_or(Role::Desktop, |v| v.role)
     }
 
-    /// Recipes to show in a category: the right role, and actually present in this
-    /// host's justfile.
-    pub fn visible_in(&self, category_id: &str) -> Vec<&Recipe> {
+    /// An action, if it applies to this role and this host's justfile has it.
+    pub fn visible(&self, id: &str) -> Option<&Action> {
         self.catalog
-            .in_category(category_id, self.role())
+            .action(id)
+            .filter(|a| a.applies_to(self.role()) && self.facts.is_available(a))
+    }
+
+    /// Actions to show on a page, in catalog order.
+    pub fn visible_on(&self, page: &str) -> Vec<&Action> {
+        self.catalog
+            .on_page(page, self.role())
             .into_iter()
-            .filter(|r| self.facts.is_available(&r.name))
+            .filter(|a| self.facts.is_available(a))
             .collect()
     }
 
-    /// Sidebar entries: categories with at least one visible recipe.
-    pub fn visible_categories(&self) -> Vec<&Category> {
+    /// Sidebar entries: pages with at least one visible action.
+    pub fn visible_pages(&self) -> Vec<&Page> {
         self.catalog
-            .categories
+            .pages
             .iter()
-            .filter(|c| !self.visible_in(&c.id).is_empty())
+            .filter(|p| !self.visible_on(&p.id).is_empty())
             .collect()
     }
 
@@ -59,61 +64,69 @@ impl App {
         *self.state.borrow_mut() = SystemState::read();
     }
 
-    /// Start a recipe and attach `page` to the result.
-    pub fn run(self: &Rc<Self>, recipe: &Recipe, args: HashMap<String, String>, page: RunPage) {
-        let request_id = {
-            let mut next = self.next_request_id.borrow_mut();
-            *next += 1;
-            *next
-        };
-        self.pending.borrow_mut().insert(request_id, page);
-        self.client.run(request_id, &recipe.name, args);
+    pub fn jobs(&self) -> Vec<Rc<Job>> {
+        self.jobs.borrow().clone()
     }
 
-    pub fn cancel(&self, job_id: &str) {
-        self.client.cancel(job_id);
+    /// Register a job so the Activity page and the sidebar follow it.
+    pub fn track(self: &Rc<Self>, job: &Rc<Job>) {
+        self.jobs.borrow_mut().push(job.clone());
+        let app = Rc::downgrade(self);
+        job.connect_changed(move |job| {
+            let Some(app) = app.upgrade() else { return };
+            if !job.state().is_active() {
+                // A job that changed the variant, the generation, a feature or a
+                // service has just invalidated whatever page is showing.
+                app.refresh_state();
+            }
+            // Cloned out so the borrow ends before any page is rebuilt.
+            let window = app.window.borrow().clone();
+            if let Some(window) = window {
+                window.jobs_changed(!job.state().is_active());
+            }
+        });
+        if let Some(window) = self.window.borrow().as_ref() {
+            window.jobs_changed(false);
+        }
     }
 
-    fn handle(self: &Rc<Self>, event: Event) {
-        match event {
-            Event::Started { request_id, job_id } => {
-                if let Some(page) = self.pending.borrow_mut().remove(&request_id) {
-                    page.attach(&job_id);
-                    self.running.borrow_mut().insert(job_id, page);
-                }
+    /// Start a daemon action. The answers have been validated against the catalog by
+    /// the caller's form; the daemon validates them again regardless.
+    pub fn run(self: &Rc<Self>, action: &Action, args: HashMap<String, String>) -> Rc<Job> {
+        let request_id = self.next_request_id.get() + 1;
+        self.next_request_id.set(request_id);
+
+        let mut command_line = action.command_line();
+        for param in &action.params {
+            if let Some(value) = args.get(&param.name) {
+                command_line.push(' ');
+                command_line.push_str(if param.is_secret() {
+                    "••••"
+                } else {
+                    value
+                });
             }
-            Event::Failed {
-                request_id,
-                message,
-            } => {
-                if let Some(page) = self.pending.borrow_mut().remove(&request_id) {
-                    if dbus_client::is_declined(&message) {
-                        page.declined();
-                    } else {
-                        page.failed_to_start(&message);
-                    }
-                }
-            }
-            Event::Output {
-                job_id,
-                stream,
-                line,
-            } => {
-                if let Some(page) = self.running.borrow().get(&job_id) {
-                    page.append(stream, &line);
-                }
-            }
-            Event::Finished { job_id, exit_code } => {
-                if let Some(page) = self.running.borrow_mut().remove(&job_id) {
-                    page.finished(exit_code);
-                    // A recipe that changed the variant, the generation or the feature
-                    // set has just invalidated the dashboard.
-                    self.refresh_state();
-                    if let Some(window) = self.window.borrow().as_ref() {
-                        window.state_changed();
-                    }
-                }
-            }
+        }
+
+        let job = Job::new(&action.title, command_line, false);
+        self.track(&job);
+        self.router.borrow_mut().expect(request_id, job.clone());
+        self.client.run(request_id, &action.id, args);
+        job
+    }
+
+    pub fn cancel(&self, job: &Job) {
+        if let Some(job_id) = job.job_id() {
+            self.client.cancel(&job_id);
+        }
+    }
+
+    fn handle(&self, event: Event) {
+        // Route first and release the router before touching any job: a job's
+        // listeners can start another job, which needs the router again.
+        let deliveries = self.router.borrow_mut().route(event);
+        for (job, event) in deliveries {
+            job.apply(&event);
         }
     }
 }
@@ -145,9 +158,9 @@ pub fn build(application: &adw::Application) {
         variant,
         state: RefCell::new(SystemState::read()),
         client: Client::start(),
-        pending: RefCell::new(HashMap::new()),
-        running: RefCell::new(HashMap::new()),
-        next_request_id: RefCell::new(0),
+        router: RefCell::new(Router::default()),
+        jobs: RefCell::new(Vec::new()),
+        next_request_id: Cell::new(0),
         window: RefCell::new(None),
     });
 

@@ -190,38 +190,64 @@ impl Param {
     pub fn is_secret(&self) -> bool {
         matches!(self.widget, Widget::Secret)
     }
+
+    /// Whether a valid value for this parameter could contain whitespace.
+    pub fn admits_whitespace(&self) -> bool {
+        match &self.widget {
+            Widget::Choice { choices } => choices.iter().any(|c| c.contains(char::is_whitespace)),
+            Widget::ChoiceDynamic { .. } => false,
+            Widget::Text { format } => matches!(format, Format::AbsPath | Format::FlakeRef),
+            Widget::Path { .. } | Widget::Secret => true,
+        }
+    }
+}
+
+/// Where an action runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Mode {
+    /// Run as root by `vexportal-daemon`, behind polkit, with no terminal.
+    #[default]
+    Daemon,
+    /// Run as the logged-in user in VexPortal's built-in terminal: the recipe holds a
+    /// conversation, or acts on the user's own account (`$HOME`, dconf, SSH keys).
+    Terminal,
 }
 
 /// A single entry in the portal.
 #[derive(Debug, Clone, Deserialize)]
-pub struct Recipe {
-    /// The `just` recipe name. This is the only string the daemon will exec.
-    pub name: String,
+pub struct Action {
+    /// Stable identifier: what the GUI asks the daemon for, and the daemon's allowlist.
+    pub id: String,
+    /// The argv after `just`, before any parameters — `["feature", "enable"]`.
+    pub command: Vec<String>,
+    /// The justfile recipe that takes the parameters, which the drift check compares
+    /// against. For a grouped menu this is the hidden `_<group>-<action>` recipe.
+    pub implements: String,
     pub title: String,
     pub blurb: String,
     pub icon: String,
-    pub category: String,
+    pub page: String,
+    /// The heading the action sits under on its page.
+    pub group: String,
     pub roles: Vec<Role>,
     pub risk: Risk,
-    /// Shown in a confirmation dialog before the recipe runs.
+    /// Shown in a confirmation dialog before the action runs.
     #[serde(default)]
     pub confirm: Option<String>,
-    /// System state keys the GUI should re-read once this recipe succeeds.
     #[serde(default)]
-    pub refresh: Vec<String>,
-    /// Recipes whose interaction cannot reasonably be expressed as a form — live
-    /// partitioning wizards and the like. The GUI offers a terminal launch instead.
+    pub mode: Mode,
+    /// Why a terminal action cannot be a form. Required for `mode = "terminal"`.
     #[serde(default)]
-    pub terminal: bool,
-    /// True while this recipe still prompts in vexos-nix and needs the
-    /// `VEXOS_ASSUME_YES` / parameter changes before the form path works.
+    pub mode_reason: Option<String>,
+    /// Success edits a file the next rebuild reads, so the GUI offers a rebuild.
     #[serde(default)]
-    pub needs_upstream: bool,
+    pub rebuild: bool,
     #[serde(default)]
     pub params: Vec<Param>,
 }
 
-impl Recipe {
+impl Action {
     pub fn applies_to(&self, role: Role) -> bool {
         self.roles.contains(&role)
     }
@@ -229,16 +255,43 @@ impl Recipe {
     pub fn param(&self, name: &str) -> Option<&Param> {
         self.params.iter().find(|p| p.name == name)
     }
+
+    pub fn is_terminal(&self) -> bool {
+        self.mode == Mode::Terminal
+    }
+
+    /// Routed through the justfile's `_menu` helper, which joins the parameters into
+    /// one string and splits them again on whitespace.
+    pub fn is_menu_routed(&self) -> bool {
+        self.command.len() > 1
+    }
+
+    /// `just feature enable`, for headers and messages.
+    pub fn command_line(&self) -> String {
+        format!("just {}", self.command.join(" "))
+    }
 }
 
-/// A sidebar section.
+/// A sidebar entry.
 #[derive(Debug, Clone, Deserialize)]
-pub struct Category {
+pub struct Page {
     pub id: String,
     pub title: String,
     pub icon: String,
     #[serde(default)]
     pub description: Option<String>,
+}
+
+/// An optional feature module, shown as a switch on the Features page.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Feature {
+    /// The name in `_feature_names` and `vexos.features.<name>.enable`.
+    pub name: String,
+    pub title: String,
+    pub description: String,
+    /// The module default when features.nix does not mention the feature.
+    #[serde(default)]
+    pub default_on: bool,
 }
 
 /// Recipes present in the justfile that the catalog deliberately does not surface.
@@ -250,10 +303,12 @@ pub struct Excluded {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Catalog {
-    #[serde(rename = "category")]
-    pub categories: Vec<Category>,
-    #[serde(rename = "recipe")]
-    pub recipes: Vec<Recipe>,
+    #[serde(rename = "page")]
+    pub pages: Vec<Page>,
+    #[serde(rename = "action")]
+    pub actions: Vec<Action>,
+    #[serde(default, rename = "feature")]
+    pub features: Vec<Feature>,
     #[serde(default, rename = "excluded")]
     pub excluded: Vec<Excluded>,
 }
@@ -270,43 +325,77 @@ impl Catalog {
     /// Parse the compiled-in catalog. Fails only on a bug in `catalog.toml`, which
     /// [`Catalog::load`]'s test coverage catches at build time.
     pub fn load() -> Result<Self, CatalogError> {
-        let catalog: Catalog = toml::from_str(CATALOG_TOML)?;
+        Self::parse(CATALOG_TOML)
+    }
+
+    /// Parse and check a catalog document.
+    pub fn parse(source: &str) -> Result<Self, CatalogError> {
+        let catalog: Catalog = toml::from_str(source)?;
         catalog.check_consistency()?;
         Ok(catalog)
     }
 
     fn check_consistency(&self) -> Result<(), CatalogError> {
-        let known: Vec<&str> = self.categories.iter().map(|c| c.id.as_str()).collect();
+        let invalid = |message: String| Err(CatalogError::Invalid(message));
+        let known: Vec<&str> = self.pages.iter().map(|p| p.id.as_str()).collect();
         let mut seen: HashMap<&str, ()> = HashMap::new();
 
-        for recipe in &self.recipes {
-            if !known.contains(&recipe.category.as_str()) {
-                return Err(CatalogError::Invalid(format!(
-                    "recipe `{}` is in unknown category `{}`",
-                    recipe.name, recipe.category
-                )));
+        for action in &self.actions {
+            let id = &action.id;
+            if !known.contains(&action.page.as_str()) {
+                return invalid(format!(
+                    "action `{id}` is on unknown page `{}`",
+                    action.page
+                ));
             }
-            if seen.insert(recipe.name.as_str(), ()).is_some() {
-                return Err(CatalogError::Invalid(format!(
-                    "recipe `{}` is listed twice",
-                    recipe.name
-                )));
+            if seen.insert(id.as_str(), ()).is_some() {
+                return invalid(format!("action `{id}` is listed twice"));
             }
-            if recipe.roles.is_empty() {
-                return Err(CatalogError::Invalid(format!(
-                    "recipe `{}` applies to no role, so nothing could ever show it",
-                    recipe.name
-                )));
+            if action.roles.is_empty() {
+                return invalid(format!(
+                    "action `{id}` applies to no role, so nothing could ever show it"
+                ));
+            }
+            if action.command.is_empty() {
+                return invalid(format!("action `{id}` has an empty command"));
+            }
+            // The UI promises a confirmation before anything destructive, in both
+            // lanes; a destructive action without a message would break that promise.
+            if action.risk == Risk::Destructive && action.confirm.is_none() {
+                return invalid(format!(
+                    "action `{id}` is destructive but has no `confirm` message"
+                ));
+            }
+            if action.is_terminal() && action.mode_reason.is_none() {
+                return invalid(format!(
+                    "terminal action `{id}` must say why it cannot be a form (`mode_reason`)"
+                ));
+            }
+            // `_menu` joins its arguments into one string and splits them again on
+            // whitespace: an empty interior value would vanish and shift the rest, and
+            // a value containing a space would become two.
+            if action.is_menu_routed() {
+                if action.params.len() > 1 {
+                    return invalid(format!(
+                        "action `{id}` is routed through a justfile menu and may take one parameter at most"
+                    ));
+                }
+                if let Some(param) = action.params.iter().find(|p| p.admits_whitespace()) {
+                    return invalid(format!(
+                        "action `{id}`: parameter `{}` could contain whitespace, which the justfile menu would split",
+                        param.name
+                    ));
+                }
             }
             // A required parameter after an optional one cannot be expressed
             // positionally: `just` would bind the value to the wrong slot.
             let mut seen_optional = false;
-            for param in &recipe.params {
+            for param in &action.params {
                 if param.required && seen_optional {
-                    return Err(CatalogError::Invalid(format!(
-                        "recipe `{}`: required parameter `{}` follows an optional one",
-                        recipe.name, param.name
-                    )));
+                    return invalid(format!(
+                        "action `{id}`: required parameter `{}` follows an optional one",
+                        param.name
+                    ));
                 }
                 seen_optional |= !param.required;
             }
@@ -314,36 +403,24 @@ impl Catalog {
         Ok(())
     }
 
-    pub fn recipe(&self, name: &str) -> Option<&Recipe> {
-        self.recipes.iter().find(|r| r.name == name)
+    pub fn action(&self, id: &str) -> Option<&Action> {
+        self.actions.iter().find(|a| a.id == id)
     }
 
-    pub fn category(&self, id: &str) -> Option<&Category> {
-        self.categories.iter().find(|c| c.id == id)
+    pub fn page(&self, id: &str) -> Option<&Page> {
+        self.pages.iter().find(|p| p.id == id)
     }
 
-    /// Recipes for one role, in catalog order.
-    pub fn for_role(&self, role: Role) -> impl Iterator<Item = &Recipe> {
-        self.recipes.iter().filter(move |r| r.applies_to(role))
+    /// Actions for one role, in catalog order.
+    pub fn for_role(&self, role: Role) -> impl Iterator<Item = &Action> {
+        self.actions.iter().filter(move |a| a.applies_to(role))
     }
 
-    /// Recipes in one category for one role. Empty means the GUI hides the section.
-    pub fn in_category(&self, category: &str, role: Role) -> Vec<&Recipe> {
-        self.recipes
+    /// Actions on one page for one role, in catalog order.
+    pub fn on_page(&self, page: &str, role: Role) -> Vec<&Action> {
+        self.actions
             .iter()
-            .filter(|r| r.category == category && r.applies_to(role))
-            .collect()
-    }
-
-    /// Categories that have at least one recipe for this role.
-    pub fn categories_for_role(&self, role: Role) -> Vec<&Category> {
-        self.categories
-            .iter()
-            .filter(|c| {
-                self.recipes
-                    .iter()
-                    .any(|r| r.category == c.id && r.applies_to(role))
-            })
+            .filter(|a| a.page == page && a.applies_to(role))
             .collect()
     }
 }
@@ -363,20 +440,20 @@ mod tests {
         for role in Role::ALL {
             assert!(
                 catalog.for_role(role).count() > 0,
-                "role {} has no recipes at all",
+                "role {} has no actions at all",
                 role.as_str()
             );
         }
     }
 
     #[test]
-    fn every_category_is_used() {
+    fn every_page_is_used() {
         let catalog = Catalog::load().unwrap();
-        for category in &catalog.categories {
+        for page in &catalog.pages {
             assert!(
-                catalog.recipes.iter().any(|r| r.category == category.id),
-                "category `{}` has no recipes",
-                category.id
+                catalog.actions.iter().any(|a| a.page == page.id),
+                "page `{}` has no actions",
+                page.id
             );
         }
     }
@@ -386,15 +463,81 @@ mod tests {
         // A secret must be the sole trailing parameter: it is dropped from argv, so a
         // positional parameter after it would silently shift into the wrong slot.
         let catalog = Catalog::load().unwrap();
-        for recipe in &catalog.recipes {
-            if let Some(idx) = recipe.params.iter().position(Param::is_secret) {
+        for action in &catalog.actions {
+            if let Some(idx) = action.params.iter().position(Param::is_secret) {
                 assert_eq!(
                     idx,
-                    recipe.params.len() - 1,
-                    "recipe `{}`: secret parameter must come last",
-                    recipe.name
+                    action.params.len() - 1,
+                    "action `{}`: secret parameter must come last",
+                    action.id
                 );
             }
+        }
+    }
+
+    /// A one-action catalog around `body`, for the consistency rules.
+    fn single(body: &str) -> Result<Catalog, CatalogError> {
+        Catalog::parse(&format!(
+            "[[page]]\nid = \"p\"\ntitle = \"P\"\nicon = \"i\"\n\n\
+             [[action]]\nid = \"a\"\nimplements = \"a\"\ntitle = \"A\"\nblurb = \"b\"\n\
+             icon = \"i\"\npage = \"p\"\ngroup = \"g\"\nroles = [\"desktop\"]\n{body}"
+        ))
+    }
+
+    #[test]
+    fn destructive_actions_must_confirm() {
+        let err = single("command = [\"a\"]\nrisk = \"destructive\"\n").unwrap_err();
+        assert!(err.to_string().contains("confirm"), "{err}");
+        single("command = [\"a\"]\nrisk = \"destructive\"\nconfirm = \"Sure?\"\n").unwrap();
+    }
+
+    #[test]
+    fn terminal_actions_must_say_why() {
+        let err = single("command = [\"a\"]\nrisk = \"safe\"\nmode = \"terminal\"\n").unwrap_err();
+        assert!(err.to_string().contains("mode_reason"), "{err}");
+    }
+
+    #[test]
+    fn menu_routed_actions_reject_whitespace_parameters() {
+        let err = single(
+            "command = [\"g\", \"a\"]\nrisk = \"safe\"\n\
+             [[action.params]]\nname = \"p\"\nlabel = \"P\"\nwidget = \"path\"\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("whitespace"), "{err}");
+    }
+
+    #[test]
+    fn menu_routed_actions_take_one_parameter_at_most() {
+        let err = single(
+            "command = [\"g\", \"a\"]\nrisk = \"safe\"\n\
+             [[action.params]]\nname = \"p\"\nlabel = \"P\"\nwidget = \"text\"\n\
+             [[action.params]]\nname = \"q\"\nlabel = \"Q\"\nwidget = \"text\"\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("one parameter"), "{err}");
+    }
+
+    #[test]
+    fn features_cover_the_justfile_feature_names() {
+        // Mirrors `_feature_names` in tests/fixtures/vexos-nix-justfile.json; the
+        // fixture test checks the same list against the dump itself.
+        let catalog = Catalog::load().unwrap();
+        let names: Vec<&str> = catalog.features.iter().map(|f| f.name.as_str()).collect();
+        for name in [
+            "gaming",
+            "development",
+            "print3d",
+            "virtualization",
+            "sunshine",
+            "vpn",
+            "kernel",
+            "ai",
+        ] {
+            assert!(
+                names.contains(&name),
+                "feature `{name}` has no catalog entry"
+            );
         }
     }
 }

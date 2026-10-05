@@ -20,7 +20,7 @@ use log::{error, info};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use vexportal_catalog::validate::runnable_recipes;
+use vexportal_catalog::validate::runnable_actions;
 use vexportal_catalog::Catalog;
 
 const BUS_NAME: &str = "io.github.vexportal.Daemon";
@@ -43,9 +43,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let catalog = Catalog::load()?;
     info!(
-        "vexportal-daemon {} starting: {} runnable recipes, justfile {}",
+        "vexportal-daemon {} starting: {} runnable actions, justfile {}",
         env!("CARGO_PKG_VERSION"),
-        runnable_recipes(&catalog).len(),
+        runnable_actions(&catalog).len(),
         config.justfile.display()
     );
 

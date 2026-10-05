@@ -8,6 +8,8 @@
 , dbus
 , hicolor-icon-theme
 , just
+, vte-gtk4
+, xdg-terminal-exec
 }:
 
 rustPlatform.buildRustPackage {
@@ -33,6 +35,7 @@ rustPlatform.buildRustPackage {
   buildInputs = [
     gtk4
     libadwaita
+    vte-gtk4
     dbus
     hicolor-icon-theme
   ];
@@ -44,8 +47,14 @@ rustPlatform.buildRustPackage {
 
   # wrapGAppsHook4 bakes XDG_DATA_DIRS from buildInputs into the wrapper but does not
   # add $out/share, so without this GTK cannot find the icon installed below.
+  #
+  # The GUI runs `just --dump` itself, and falls back to xdg-terminal-exec when its
+  # built-in terminal cannot start; pin both rather than trusting the session's PATH.
   preFixup = ''
-    gappsWrapperArgs+=(--prefix XDG_DATA_DIRS : "$out/share")
+    gappsWrapperArgs+=(
+      --prefix XDG_DATA_DIRS : "$out/share"
+      --prefix PATH : ${lib.makeBinPath [ just xdg-terminal-exec ]}
+    )
   '';
 
   postInstall = ''

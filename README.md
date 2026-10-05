@@ -8,6 +8,27 @@ system daemon so the app itself never holds root.
 
 Built in Rust, distributed as a Nix flake.
 
+## How it runs things
+
+Every operation is a `[[action]]` in `catalog/src/catalog.toml`, and runs one of two ways:
+
+- **Daemon** (most actions): the GUI sends the action id and its answers over D-Bus
+  to `vexportal-daemon`, which revalidates them against the compiled-in catalog,
+  checks polkit for the action's risk tier, and execs `just <command> <args>` as root
+  — never through a shell. Rebuilds, feature and service toggles, the VPN controls
+  and backups all go this way.
+- **Terminal** (`mode = "terminal"`): recipes that hold a conversation (the storage
+  and service-setup wizards) or act on your own account (SSH keys, Tailscale, GNOME
+  settings, the AI assistant) run in VexPortal's built-in terminal, **as you**, exactly
+  as if typed into a shell — any root step goes through the recipe's own `sudo`. The
+  argv is validated by the same catalog code and exec'd directly. If the built-in
+  terminal cannot start, the same argv goes to your desktop's terminal via
+  `xdg-terminal-exec`.
+
+State the GUI can read without privileges — features.nix, server-services.nix,
+`vexos-vpn status --json` — it reads directly, so pages show switches and status
+rather than "run a command to find out" buttons.
+
 ## Build
 
 ```sh

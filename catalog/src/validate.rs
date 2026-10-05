@@ -1,18 +1,21 @@
-//! Turning user answers into an argv the daemon is willing to execute.
+//! Turning user answers into an argv that is allowed to run.
 //!
 //! This is the allowlist. The daemon runs [`build`] on every request and executes
-//! nothing else: a recipe name that is not in the catalog has no path to `exec`, and
-//! neither does a parameter value that fails its format.
+//! nothing else: an action id that is not in the catalog has no path to `exec`, and
+//! neither does a parameter value that fails its format. The GUI's built-in terminal
+//! runs [`build_for_terminal`], the same checks for the actions that run as the user.
 
 use crate::format::FormatError;
-use crate::{Catalog, Param, Recipe, Risk, Widget};
+use crate::{Action, Catalog, Mode, Param, Risk, Widget};
 use std::collections::BTreeMap;
 
 /// A validated request, ready to hand to `just`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invocation {
-    /// The recipe name, guaranteed to exist in the catalog.
-    pub recipe: String,
+    /// The action id, guaranteed to exist in the catalog.
+    pub action: String,
+    /// The argv prefix after `just`, from the catalog.
+    pub command: Vec<String>,
     /// Positional arguments, trailing empties trimmed.
     pub argv: Vec<String>,
     /// Written to the child's stdin rather than argv, so it stays out of `ps`,
@@ -26,14 +29,14 @@ pub struct Invocation {
 impl Invocation {
     /// The full `just` argument vector, for logging and for `Command::args`.
     pub fn just_args(&self) -> Vec<String> {
-        let mut args = vec![self.recipe.clone()];
+        let mut args = self.command.clone();
         args.extend(self.argv.iter().cloned());
         args
     }
 
     /// A redacted, human-readable rendering for the audit log.
     pub fn audit_line(&self) -> String {
-        let mut line = format!("just {}", self.recipe);
+        let mut line = format!("just {}", self.command.join(" "));
         for arg in &self.argv {
             line.push(' ');
             line.push_str(if arg.is_empty() { "''" } else { arg });
@@ -47,12 +50,14 @@ impl Invocation {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ValidationError {
-    #[error("`{0}` is not a recipe VexPortal knows about")]
-    UnknownRecipe(String),
+    #[error("`{0}` is not an action VexPortal knows about")]
+    UnknownAction(String),
     #[error("`{0}` runs interactively and can only be started in a terminal")]
     TerminalOnly(String),
-    #[error("`{recipe}` has no parameter named `{param}`")]
-    UnknownParam { recipe: String, param: String },
+    #[error("`{0}` runs as root through the VexPortal daemon, not in a terminal")]
+    DaemonOnly(String),
+    #[error("`{action}` has no parameter named `{param}`")]
+    UnknownParam { action: String, param: String },
     #[error("`{label}` is required")]
     Missing { label: String },
     #[error("`{label}`: {source}")]
@@ -65,30 +70,55 @@ pub enum ValidationError {
     NotAChoice { label: String, got: String },
 }
 
-/// Validate `answers` against the catalog and produce an [`Invocation`].
+/// Validate `answers` for an action the daemon runs, and produce an [`Invocation`].
 ///
 /// `answers` is keyed by parameter name. Missing optional parameters fall back to the
 /// catalog default and then to empty, which makes `just` apply the recipe's own
 /// default — the same thing that happens when a user omits the argument on the CLI.
 pub fn build(
     catalog: &Catalog,
-    recipe_name: &str,
+    action_id: &str,
     answers: &BTreeMap<String, String>,
 ) -> Result<Invocation, ValidationError> {
-    let recipe = catalog
-        .recipe(recipe_name)
-        .ok_or_else(|| ValidationError::UnknownRecipe(recipe_name.to_string()))?;
-
-    if recipe.terminal {
-        return Err(ValidationError::TerminalOnly(recipe.name.clone()));
+    let action = lookup(catalog, action_id)?;
+    if action.mode != Mode::Daemon {
+        return Err(ValidationError::TerminalOnly(action.id.clone()));
     }
+    invocation(action, answers)
+}
 
+/// Validate `answers` for an action that runs as the user in the GUI's terminal.
+///
+/// Refuses daemon actions, so nothing meant to run behind polkit can be started
+/// unprivileged by mistake — they would fail half-way at their first `sudo`.
+pub fn build_for_terminal(
+    catalog: &Catalog,
+    action_id: &str,
+    answers: &BTreeMap<String, String>,
+) -> Result<Invocation, ValidationError> {
+    let action = lookup(catalog, action_id)?;
+    if action.mode != Mode::Terminal {
+        return Err(ValidationError::DaemonOnly(action.id.clone()));
+    }
+    invocation(action, answers)
+}
+
+fn lookup<'a>(catalog: &'a Catalog, action_id: &str) -> Result<&'a Action, ValidationError> {
+    catalog
+        .action(action_id)
+        .ok_or_else(|| ValidationError::UnknownAction(action_id.to_string()))
+}
+
+fn invocation(
+    action: &Action,
+    answers: &BTreeMap<String, String>,
+) -> Result<Invocation, ValidationError> {
     // Reject unknown keys rather than ignoring them: a typo in a parameter name would
-    // otherwise silently run the recipe with its default.
+    // otherwise silently run the action with its default.
     for key in answers.keys() {
-        if recipe.param(key).is_none() {
+        if action.param(key).is_none() {
             return Err(ValidationError::UnknownParam {
-                recipe: recipe.name.clone(),
+                action: action.id.clone(),
                 param: key.clone(),
             });
         }
@@ -98,7 +128,7 @@ pub fn build(
     let mut stdin: Option<String> = None;
     let mut must_exist: Vec<String> = Vec::new();
 
-    for param in &recipe.params {
+    for param in &action.params {
         let value = answers
             .get(&param.name)
             .map(String::as_str)
@@ -143,10 +173,11 @@ pub fn build(
     }
 
     Ok(Invocation {
-        recipe: recipe.name.clone(),
+        action: action.id.clone(),
+        command: action.command.clone(),
         argv,
         stdin,
-        risk: recipe.risk,
+        risk: action.risk,
         must_exist,
     })
 }
@@ -182,10 +213,13 @@ fn check_value(param: &Param, value: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Every recipe the daemon may be asked to run, for the D-Bus introspection surface
-/// and for the daemon's own startup log.
-pub fn runnable_recipes(catalog: &Catalog) -> Vec<&Recipe> {
-    catalog.recipes.iter().filter(|r| !r.terminal).collect()
+/// Every action the daemon may be asked to run, for the daemon's startup log.
+pub fn runnable_actions(catalog: &Catalog) -> Vec<&Action> {
+    catalog
+        .actions
+        .iter()
+        .filter(|a| a.mode == Mode::Daemon)
+        .collect()
 }
 
 #[cfg(test)]
@@ -204,24 +238,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_recipes_outside_the_catalog() {
-        let err = build(&catalog(), "definitely-not-a-recipe", &answers(&[])).unwrap_err();
-        assert!(matches!(err, ValidationError::UnknownRecipe(_)));
+    fn rejects_actions_outside_the_catalog() {
+        let err = build(&catalog(), "definitely-not-an-action", &answers(&[])).unwrap_err();
+        assert!(matches!(err, ValidationError::UnknownAction(_)));
     }
 
     #[test]
     fn rejects_a_shell_injection_attempt_in_every_parameter() {
         let catalog = catalog();
-        for recipe in super::runnable_recipes(&catalog) {
-            for param in &recipe.params {
+        for action in &catalog.actions {
+            for param in &action.params {
                 if param.is_secret() {
                     continue;
                 }
                 let attempt = answers(&[(param.name.as_str(), "; rm -rf / #")]);
+                let result = match action.mode {
+                    Mode::Daemon => build(&catalog, &action.id, &attempt),
+                    Mode::Terminal => build_for_terminal(&catalog, &action.id, &attempt),
+                };
                 assert!(
-                    build(&catalog, &recipe.name, &attempt).is_err(),
+                    result.is_err(),
                     "`{}` accepted an injection attempt in `{}`",
-                    recipe.name,
+                    action.id,
                     param.name
                 );
             }
@@ -235,6 +273,18 @@ mod tests {
     }
 
     #[test]
+    fn menu_actions_prefix_their_command() {
+        let inv = build(
+            &catalog(),
+            "feature-enable",
+            &answers(&[("feature", "gaming")]),
+        )
+        .unwrap();
+        assert_eq!(inv.just_args(), ["feature", "enable", "gaming"]);
+        assert_eq!(inv.audit_line(), "just feature enable gaming");
+    }
+
+    #[test]
     fn switch_builds_a_positional_argv() {
         let inv = build(
             &catalog(),
@@ -243,7 +293,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(inv.just_args(), ["switch", "desktop", "nvidia"]);
-        // The trailing optional `flake` is dropped so `just` applies its own default.
+        // The trailing optionals are dropped so `just` applies its own defaults.
         assert_eq!(inv.argv.len(), 2);
     }
 
@@ -252,10 +302,20 @@ mod tests {
         let inv = build(
             &catalog(),
             "switch",
-            &answers(&[("role", "desktop"), ("variant", "amd"), ("flake", ".")]),
+            &answers(&[("role", "desktop"), ("variant", "amd"), ("de", "cosmic")]),
         )
         .unwrap();
-        assert_eq!(inv.just_args(), ["switch", "desktop", "amd", "."]);
+        assert_eq!(inv.just_args(), ["switch", "desktop", "amd", "", "cosmic"]);
+    }
+
+    #[test]
+    fn the_legacy_nvidia_driver_is_580() {
+        build(
+            &catalog(),
+            "switch",
+            &answers(&[("role", "desktop"), ("variant", "nvidia-legacy580")]),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -276,30 +336,46 @@ mod tests {
     }
 
     #[test]
-    fn terminal_recipes_cannot_be_run_by_the_daemon() {
-        let catalog = catalog();
-        let terminal = catalog
-            .recipes
-            .iter()
-            .find(|r| r.terminal)
-            .expect("the catalog should mark the storage wizards terminal-only");
-        let err = build(&catalog, &terminal.name, &answers(&[])).unwrap_err();
+    fn terminal_actions_cannot_be_run_by_the_daemon() {
+        let err = build(&catalog(), "zfs-pool", &answers(&[])).unwrap_err();
         assert!(matches!(err, ValidationError::TerminalOnly(_)));
     }
 
     #[test]
+    fn daemon_actions_cannot_be_run_in_the_terminal() {
+        let err = build_for_terminal(&catalog(), "rebuild", &answers(&[])).unwrap_err();
+        assert!(matches!(err, ValidationError::DaemonOnly(_)));
+    }
+
+    #[test]
+    fn terminal_actions_validate_their_parameters_too() {
+        let inv = build_for_terminal(
+            &catalog(),
+            "service-enable",
+            &answers(&[("service", "plex")]),
+        )
+        .unwrap();
+        assert_eq!(inv.just_args(), ["service", "enable", "plex"]);
+        assert!(build_for_terminal(&catalog(), "service-enable", &answers(&[])).is_err());
+    }
+
+    #[test]
     fn secrets_go_to_stdin_and_stay_out_of_the_audit_line() {
-        let catalog = catalog();
-        let recipe = catalog
-            .recipes
-            .iter()
-            .find(|r| r.params.iter().any(Param::is_secret))
-            .expect("setup-rdp should take a secret");
-        let secret = recipe.params.iter().find(|p| p.is_secret()).unwrap();
+        // No shipped action takes a secret today, but the daemon keeps the stdin path,
+        // so it is exercised against a catalog of its own.
+        let catalog = Catalog::parse(
+            "[[page]]\nid = \"p\"\ntitle = \"P\"\nicon = \"i\"\n\n\
+             [[action]]\nid = \"set-password\"\ncommand = [\"set-password\"]\n\
+             implements = \"set-password\"\ntitle = \"T\"\nblurb = \"b\"\nicon = \"i\"\n\
+             page = \"p\"\ngroup = \"g\"\nroles = [\"desktop\"]\nrisk = \"medium\"\n\
+             [[action.params]]\nname = \"password\"\nlabel = \"Password\"\n\
+             required = true\nwidget = \"secret\"\n",
+        )
+        .unwrap();
         let inv = build(
             &catalog,
-            &recipe.name,
-            &answers(&[(secret.name.as_str(), "hunter2")]),
+            "set-password",
+            &answers(&[("password", "hunter2")]),
         )
         .unwrap();
         assert_eq!(inv.stdin.as_deref(), Some("hunter2"));
@@ -309,8 +385,8 @@ mod tests {
 
     #[test]
     fn defaults_come_from_the_catalog() {
-        let inv = build(&catalog(), "attic-push", &answers(&[])).unwrap();
-        assert_eq!(inv.just_args(), ["attic-push", "vexos"]);
+        let inv = build(&catalog(), "cache-push", &answers(&[])).unwrap();
+        assert_eq!(inv.just_args(), ["cache", "push", "vexos"]);
     }
 
     #[test]

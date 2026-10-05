@@ -7,14 +7,14 @@ use vexportal_catalog::Role;
 pub const VARIANT_FILE: &str = "/etc/nixos/vexos-variant";
 
 /// Lets a developer point the GUI at another role to check what it renders, without
-/// building that role. It only affects which recipes are listed; the daemon decides
+/// building that role. It only affects which actions are listed; the daemon decides
 /// what may actually run.
 pub const OVERRIDE_ENV: &str = "VEXPORTAL_VARIANT";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub role: Role,
-    /// The GPU part of the variant: `amd`, `nvidia`, `nvidia-legacy535`, `intel`, `vm`.
+    /// The GPU part of the variant: `amd`, `nvidia`, `nvidia-legacy580`, `intel`, `vm`.
     pub gpu: String,
     /// The string as written in the file, e.g. `vexos-desktop-nvidia`.
     pub raw: String,
@@ -77,7 +77,7 @@ impl Variant {
         match self.gpu.as_str() {
             "amd" => "AMD",
             "nvidia" => "NVIDIA",
-            "nvidia-legacy535" => "NVIDIA (legacy 535)",
+            "nvidia-legacy580" => "NVIDIA (legacy 580)",
             "intel" => "Intel",
             "vm" => "Virtual machine",
             "" => "no GPU variant",
@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn parses_every_role_and_gpu_combination() {
         for role in Role::ALL {
-            for gpu in ["amd", "nvidia", "nvidia-legacy535", "intel", "vm"] {
+            for gpu in ["amd", "nvidia", "nvidia-legacy580", "intel", "vm"] {
                 let raw = format!("vexos-{}-{gpu}", role.as_str());
                 let variant = Variant::parse(&raw).unwrap();
                 assert_eq!(variant.role, role, "{raw}");

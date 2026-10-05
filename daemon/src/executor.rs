@@ -35,7 +35,7 @@ pub fn spawn(
     let cancel = CancellationToken::new();
     let token = cancel.clone();
     let id = job_id.clone();
-    let recipe = invocation.recipe.clone();
+    let recipe = invocation.action.clone();
     let config = config.clone();
 
     let task = tokio::spawn(async move {

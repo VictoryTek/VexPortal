@@ -40,12 +40,29 @@ pub struct JustParam {
     /// `null` for a required parameter; a string for one with a default.
     #[serde(default)]
     pub default: Option<String>,
+    /// `singular`, or `star`/`plus` for a variadic `*args`/`+args` parameter.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 impl JustParam {
     fn required(&self) -> bool {
-        self.default.is_none()
+        self.default.is_none() && !self.is_variadic()
     }
+
+    /// A catch-all `*args` takes whatever is left, so it is not a positional slot the
+    /// catalog has to describe.
+    fn is_variadic(&self) -> bool {
+        matches!(self.kind.as_deref(), Some("star" | "plus"))
+    }
+}
+
+/// One entry of the justfile's `_service_catalog`: `Group|name|description`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceEntry {
+    pub group: String,
+    pub name: String,
+    pub description: String,
 }
 
 impl JustDump {
@@ -65,14 +82,38 @@ impl JustDump {
             .map(|a| a.value.split_whitespace().map(str::to_string).collect())
             .unwrap_or_default()
     }
+
+    /// The `_service_catalog` variable: every server service module, grouped and
+    /// described, in the justfile's order.
+    pub fn service_catalog(&self) -> Vec<ServiceEntry> {
+        let Some(assignment) = self.assignments.get("_service_catalog") else {
+            return Vec::new();
+        };
+        assignment
+            .value
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.trim().splitn(3, '|');
+                let group = fields.next()?.trim();
+                let name = fields.next()?.trim();
+                let description = fields.next().unwrap_or("").trim();
+                (!group.is_empty() && !name.is_empty()).then(|| ServiceEntry {
+                    group: group.to_string(),
+                    name: name.to_string(),
+                    description: description.to_string(),
+                })
+            })
+            .collect()
+    }
 }
 
 /// One way the catalog and the justfile disagree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Drift {
-    /// The justfile has a public recipe the catalog neither lists nor excludes.
+    /// The justfile has a public recipe no catalog action starts and that the catalog
+    /// does not exclude.
     Unlisted { recipe: String, doc: Option<String> },
-    /// The catalog lists a recipe this host's justfile does not have.
+    /// The catalog uses a recipe this host's justfile does not have.
     ///
     /// Usually benign: `/etc/nixos/justfile` is a copy made by the last rebuild, so a
     /// host that has not rebuilt since vexos-nix gained a recipe will legitimately be
@@ -135,17 +176,22 @@ impl Drift {
 
 /// Compare a catalog against a justfile dump.
 ///
-/// Private justfile recipes are ignored unless the catalog lists them: role guards
-/// like `_require-server-role` and the server recipes hidden from `just --list` are
-/// private by design, and the catalog decides which of those to surface.
+/// Private justfile recipes are ignored unless an action uses them: role guards like
+/// `_require-server-role` are private by design, and so are the `_<group>-<action>`
+/// recipes behind the justfile's menus, which the catalog reaches through the public
+/// menu (`just feature enable` runs `_feature-enable`).
 pub fn compare(catalog: &Catalog, dump: &JustDump) -> Vec<Drift> {
     let mut drift = Vec::new();
 
     for (name, just_recipe) in &dump.recipes {
-        if just_recipe.private || catalog.recipe(name).is_some() {
+        if just_recipe.private {
             continue;
         }
-        if catalog.excluded.iter().any(|e| &e.name == name) {
+        let started = catalog
+            .actions
+            .iter()
+            .any(|a| a.command.first() == Some(name) || &a.implements == name);
+        if started || catalog.excluded.iter().any(|e| &e.name == name) {
             continue;
         }
         drift.push(Drift::Unlisted {
@@ -154,41 +200,50 @@ pub fn compare(catalog: &Catalog, dump: &JustDump) -> Vec<Drift> {
         });
     }
 
-    for recipe in &catalog.recipes {
-        let Some(just_recipe) = dump.recipes.get(&recipe.name) else {
-            drift.push(Drift::Missing {
-                recipe: recipe.name.clone(),
-            });
+    let mut missing: Vec<&str> = Vec::new();
+    for action in &catalog.actions {
+        // The entry point and the recipe behind it both have to exist.
+        for name in [&action.command[0], &action.implements] {
+            if !dump.recipes.contains_key(name) && !missing.contains(&name.as_str()) {
+                missing.push(name);
+                drift.push(Drift::Missing {
+                    recipe: name.clone(),
+                });
+            }
+        }
+        let Some(just_recipe) = dump.recipes.get(&action.implements) else {
             continue;
         };
 
-        // Secrets are delivered on stdin, so they have no justfile counterpart.
-        let catalog_params: Vec<String> = recipe
+        // Secrets are delivered on stdin, so they have no justfile counterpart; a
+        // variadic `*args` is a catch-all rather than a slot.
+        let catalog_params: Vec<String> = action
             .params
             .iter()
             .filter(|p| !p.is_secret())
             .map(|p| p.name.clone())
             .collect();
-        let just_params: Vec<String> = just_recipe
+        let positional: Vec<&JustParam> = just_recipe
             .parameters
             .iter()
-            .map(|p| p.name.clone())
+            .filter(|p| !p.is_variadic())
             .collect();
+        let just_params: Vec<String> = positional.iter().map(|p| p.name.clone()).collect();
 
         if catalog_params != just_params {
             drift.push(Drift::Parameters {
-                recipe: recipe.name.clone(),
+                recipe: action.implements.clone(),
                 catalog: catalog_params,
                 justfile: just_params,
             });
             continue;
         }
 
-        for (param, just_param) in recipe
+        for (param, just_param) in action
             .params
             .iter()
             .filter(|p: &&Param| !p.is_secret())
-            .zip(&just_recipe.parameters)
+            .zip(positional)
         {
             // Only the permissive direction is a defect. A catalog that requires what
             // the justfile would accept as empty is a deliberate UX call — `just
@@ -196,7 +251,7 @@ pub fn compare(catalog: &Catalog, dump: &JustDump) -> Vec<Drift> {
             // submit its way into a prompt.
             if just_param.required() && !param.required {
                 drift.push(Drift::Requiredness {
-                    recipe: recipe.name.clone(),
+                    recipe: action.implements.clone(),
                     param: param.name.clone(),
                 });
             }

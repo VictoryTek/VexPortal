@@ -1,4 +1,4 @@
-# VexPortal recipe catalog
+# VexPortal action catalog
 #
 # Curated metadata for the vexos-nix justfile. `just` can enumerate its own recipes,
 # but it keeps only the last comment line as a doc string, has no notion of roles, and
@@ -6,210 +6,263 @@
 # and argument widgets live here.
 #
 # Keep this in sync with the justfile. `cargo test -p vexportal-catalog` compares the
-# two against /etc/nixos/justfile and fails on drift.
+# two against tests/fixtures/vexos-nix-justfile.json (and /etc/nixos/justfile on a
+# built host) and fails on drift.
 #
-#   roles  — which VexOS roles surface the recipe. Mirrors the `_require-*-role`
-#            guards in the justfile; server recipes are `[private]` there and hidden
-#            from `just --list`, which is exactly why this file has to carry them.
-#   risk   — safe: reads state only, runs without a polkit prompt.
-#            medium: reversible change, `auth_admin_keep`.
-#            destructive: destroys data or cuts network access, `auth_admin`.
-#   terminal      — interaction cannot be expressed as a form; GUI launches a terminal.
-#   needs_upstream — still prompts in vexos-nix; needs the VEXOS_ASSUME_YES work
-#                    before the form path is fully non-interactive.
+#   command    — the argv after `just`; parameters are appended. Most operations sit
+#                behind the justfile's grouped menus (`just feature enable gaming`),
+#                which `exec just _feature-enable gaming` underneath.
+#   implements — the justfile recipe that actually takes the parameters. The drift
+#                check compares `params` against it.
+#   roles      — which VexOS roles surface the action. Mirrors the `_require-*-role`
+#                guards in the justfile.
+#   risk       — safe: reads state only, runs without a polkit prompt.
+#                medium: reversible change, `auth_admin_keep`.
+#                destructive: destroys data or cuts network access, `auth_admin`.
+#                Every destructive action must carry a `confirm` message.
+#   mode       — daemon (default): run as root by vexportal-daemon, no terminal.
+#                terminal: run as the logged-in user in VexPortal's built-in terminal,
+#                because the recipe holds a conversation or acts on the user's own
+#                account. `mode_reason` says which.
+#   group      — the heading the action sits under on its page.
+#   rebuild    — success edits a file the next rebuild reads, so the GUI offers one.
+#
+# Parameters of an action routed through a menu (`command` longer than one word) are
+# re-split on whitespace by the justfile's `_menu` helper, so they must use a format
+# that cannot contain whitespace. The catalog refuses to load otherwise.
 
-# ─────────────────────────── Categories ───────────────────────────
+# ─────────────────────────────── Pages ───────────────────────────────
 
-[[category]]
-id = "build-deploy"
-title = "Build & Deploy"
-icon = "software-update-available-symbolic"
-description = "Rebuild this machine, or change its role and GPU variant."
-
-[[category]]
-id = "upgrades"
-title = "Upgrades & Rollback"
-icon = "edit-undo-symbolic"
-description = "Move between NixOS generations and check a release upgrade before taking it."
-
-[[category]]
-id = "features"
-title = "Features"
-icon = "preferences-other-symbolic"
-description = "Optional feature modules for this host."
-
-[[category]]
-id = "services"
-title = "Server Services"
-icon = "network-server-symbolic"
-description = "Enable, inspect and restart the service modules on this server."
-
-[[category]]
-id = "storage"
-title = "Storage & Backup"
-icon = "drive-harddisk-symbolic"
-description = "Storage pools, remote mounts, and Plex backup and restore."
-
-[[category]]
-id = "network"
-title = "Network & Remote"
-icon = "network-wireless-symbolic"
-description = "VPN kill switch, Tailscale, remote desktop and SSH keys."
-
-[[category]]
-id = "cache"
-title = "Binary Cache"
-icon = "folder-download-symbolic"
-description = "Attic and Harmonia caches, and the custom kernel build host."
-
-[[category]]
+[[page]]
 id = "system"
 title = "System"
 icon = "emblem-system-symbolic"
-description = "Hostname, power, secrets and desktop defaults."
+description = "Rebuild this machine, change its role, and manage generations and power."
 
-# ─────────────────────── Build & Deploy ───────────────────────
+[[page]]
+id = "features"
+title = "Features"
+icon = "application-x-addon-symbolic"
+description = "Optional modules for this machine. Changes take effect on the next rebuild."
 
-[[recipe]]
-name = "variant"
+[[page]]
+id = "network"
+title = "VPN & Network"
+icon = "network-vpn-symbolic"
+description = "The PIA VPN, its kill switch, and Tailscale."
+
+[[page]]
+id = "services"
+title = "Services"
+icon = "network-server-symbolic"
+description = "Server service modules: what is enabled, how to reach it, and its health."
+
+[[page]]
+id = "storage"
+title = "Storage & Backup"
+icon = "drive-harddisk-symbolic"
+description = "Backups, storage pools and remote shares."
+
+[[page]]
+id = "cache"
+title = "Cache & Kernel"
+icon = "folder-download-symbolic"
+description = "Attic and Harmonia binary caches, and the custom kernel builder."
+
+[[page]]
+id = "tools"
+title = "Tools"
+icon = "applications-utilities-symbolic"
+description = "One-off setup tasks for this machine and your account."
+
+# ─────────────────────────────── Features ───────────────────────────────
+# One switch each on the Features page. `default_on` mirrors the module default the
+# justfile's `_feature-list` assumes when features.nix does not mention the feature.
+
+[[feature]]
+name = "gaming"
+title = "Gaming"
+description = "Steam, Proton-GE, GameMode, Gamescope, Wine, controller support and gaming kernel tuning."
+
+[[feature]]
+name = "development"
+title = "Development"
+description = "Docker, VSCodium, Python, Node, Rust, Go and Nix language tooling."
+
+[[feature]]
+name = "print3d"
+title = "3D Printing"
+description = "Blender and OrcaSlicer."
+
+[[feature]]
+name = "virtualization"
+title = "Virtualization"
+description = "libvirtd, QEMU/KVM and GNOME Boxes."
+
+[[feature]]
+name = "sunshine"
+title = "Game Streaming"
+description = "Sunshine, a self-hosted Moonlight game-stream host."
+default_on = true
+
+[[feature]]
+name = "vpn"
+title = "PIA VPN"
+description = "Private Internet Access over WireGuard or OpenVPN, with an nftables kill switch."
+
+[[feature]]
+name = "kernel"
+title = "Custom Kernel"
+description = "Boot a custom kernel from the VexOS kernel registry."
+
+[[feature]]
+name = "ai"
+title = "AI Assistant"
+description = "Claude Code or OpenCode, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
+
+# ─────────────────────────────── System ───────────────────────────────
+
+[[action]]
+id = "variant"
+command = ["variant"]
+implements = "variant"
 title = "Show Active Variant"
 blurb = "Print the role and GPU variant this machine is currently built as."
 icon = "dialog-information-symbolic"
-category = "build-deploy"
+page = "system"
+group = "Build"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "safe"
 
-[[recipe]]
-name = "rebuild"
+[[action]]
+id = "rebuild"
+command = ["rebuild"]
+implements = "rebuild"
 title = "Rebuild System"
-blurb = "Rebuild and activate NixOS using the variant this machine already runs."
+blurb = "Rebuild and activate NixOS with the role and GPU variant this machine already runs. Applies any feature or service changes."
 icon = "view-refresh-symbolic"
-category = "build-deploy"
+page = "system"
+group = "Build"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
-refresh = ["generation"]
 
-[[recipe]]
-name = "build"
-title = "Test Build"
-blurb = "Dry-run build of a role and GPU variant without switching to it. Nothing on this machine changes."
-icon = "utilities-terminal-symbolic"
-category = "build-deploy"
+[[action]]
+id = "switch"
+command = ["switch"]
+implements = "switch"
+title = "Switch Role or GPU"
+blurb = "Rebuild and activate a different VexOS role, GPU variant or desktop environment."
+icon = "object-select-symbolic"
+page = "system"
+group = "Build"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
-risk = "safe"
+risk = "medium"
+confirm = "This rebuilds the system and changes which role and GPU variant this machine boots. Test it first with Test Build if you are unsure."
 
-  [[recipe.params]]
+  # The switch dialog always fills role and GPU, and fills `de` and `vmp` whenever
+  # they apply — the justfile only prompts for fields left empty.
+  [[action.params]]
   name = "role"
   label = "Role"
   required = true
   widget = "choice"
   choices = ["desktop", "stateless", "htpc", "server", "headless-server", "vanilla"]
 
-  [[recipe.params]]
+  [[action.params]]
   name = "variant"
   label = "GPU"
   required = true
   widget = "choice"
-  choices = ["amd", "nvidia", "nvidia-legacy535", "intel", "vm"]
+  choices = ["amd", "nvidia", "nvidia-legacy580", "intel", "vm"]
 
-  [[recipe.params]]
+  [[action.params]]
+  name = "flake"
+  label = "Flake override"
+  widget = "text"
+  format = "flake-ref"
+
+  [[action.params]]
+  name = "de"
+  label = "Desktop environment"
+  widget = "choice"
+  choices = ["gnome", "cosmic", "hyprland"]
+
+  [[action.params]]
+  name = "vmp"
+  label = "VM platform"
+  widget = "choice"
+  choices = ["qemu", "virtualbox"]
+
+[[action]]
+id = "build"
+command = ["build"]
+implements = "build"
+title = "Test Build"
+blurb = "Dry-run build of a role and GPU variant without switching to it. Nothing on this machine changes."
+icon = "system-run-symbolic"
+page = "system"
+group = "Build"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "safe"
+
+  [[action.params]]
+  name = "role"
+  label = "Role"
+  required = true
+  widget = "choice"
+  choices = ["desktop", "stateless", "htpc", "server", "headless-server", "vanilla"]
+
+  [[action.params]]
+  name = "variant"
+  label = "GPU"
+  required = true
+  widget = "choice"
+  choices = ["amd", "nvidia", "nvidia-legacy580", "intel", "vm"]
+
+  [[action.params]]
   name = "flake"
   label = "Flake override"
   help = "Leave empty to use the flake this machine is configured with."
   widget = "text"
   format = "flake-ref"
 
-[[recipe]]
-name = "switch"
-title = "Switch Role or GPU"
-blurb = "Rebuild and activate a different VexOS role or GPU variant on this machine."
-icon = "object-select-symbolic"
-category = "build-deploy"
+[[action]]
+id = "rollback"
+command = ["rollback"]
+implements = "rollback"
+title = "Roll Back"
+blurb = "Activate the previous NixOS generation and make it the boot default."
+icon = "edit-undo-symbolic"
+page = "system"
+group = "Generations"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
-confirm = "This rebuilds the system and changes which role and GPU variant this machine boots. Test it first with Test Build if you are unsure."
-refresh = ["variant", "generation"]
-needs_upstream = true
 
-  [[recipe.params]]
-  name = "role"
-  label = "Role"
-  help = "Leave empty to keep the current role."
-  widget = "choice"
-  choices = ["desktop", "stateless", "htpc", "server", "headless-server", "vanilla"]
-
-  [[recipe.params]]
-  name = "variant"
-  label = "GPU"
-  help = "Legacy 535 covers Maxwell, Pascal and Volta cards."
-  widget = "choice"
-  choices = ["amd", "nvidia", "nvidia-legacy535", "intel", "vm"]
-
-  [[recipe.params]]
-  name = "flake"
-  label = "Flake override"
-  widget = "text"
-  format = "flake-ref"
-
-  [[recipe.params]]
-  name = "de"
-  label = "Desktop environment"
-  help = "Desktop role only. Left unchanged, the rebuild stops at the justfile's prompt."
-  widget = "choice"
-  choices = ["gnome", "cosmic", "hyprland"]
-
-  [[recipe.params]]
-  name = "vmp"
-  label = "VM platform"
-  help = "VM GPU variant only. Left unchanged, the rebuild stops at the justfile's prompt."
-  widget = "choice"
-  choices = ["qemu", "virtualbox"]
-
-# Limine migration is two recipes and a reboot in between: the first installs Limine
-# alongside the existing systemd-boot entry, the second removes the fallback once the
-# machine has demonstrably booted the new one. `_confirm` honours VEXOS_ASSUME_YES, so
-# the daemon answers the justfile's own prompt — the warning has to be here instead.
-[[recipe]]
-name = "switch-bootloader"
-title = "Migrate to Limine"
-blurb = "Install the Limine bootloader alongside the current systemd-boot entry and boot it first. UEFI only; nothing is removed."
-icon = "drive-harddisk-symbolic"
-category = "build-deploy"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+[[action]]
+id = "rollforward"
+command = ["rollforward"]
+implements = "rollforward"
+title = "Roll Forward"
+blurb = "Activate the next newer NixOS generation and make it the boot default."
+icon = "edit-redo-symbolic"
+page = "system"
+group = "Generations"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
-confirm = "This patches /etc/nixos/flake.nix, rebuilds the system, and makes Limine the first UEFI boot entry. The systemd-boot entry stays as a fallback. Reboot and confirm Limine works before running the cleanup step."
-refresh = ["generation"]
 
-  [[recipe.params]]
-  name = "target"
-  label = "Bootloader"
-  help = "Limine is the only supported migration target."
-  required = true
-  widget = "choice"
-  choices = ["limine"]
-
-[[recipe]]
-name = "switch-bootloader-cleanup"
-title = "Finish Limine Migration"
-blurb = "Remove the old systemd-boot entry and its leftover ESP files after Limine has booted successfully."
-icon = "edit-clear-all-symbolic"
-category = "build-deploy"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
-risk = "destructive"
-confirm = "This deletes the systemd-boot fallback entry and its files. It only runs if this session actually booted via Limine, and there is no way back to systemd-boot without reinstalling it."
-
-# ───────────────────── Upgrades & Rollback ─────────────────────
-
-[[recipe]]
-name = "upgrade-analysis"
+[[action]]
+id = "upgrade-analysis"
+command = ["upgrade-analysis"]
+implements = "upgrade-analysis"
 title = "Analyse Release Upgrade"
-blurb = "Test this configuration against a newer nixpkgs without changing anything: whether it still evaluates, what is missing from the binary cache, and whether the upgrade is safe to take."
+blurb = "Test this configuration against a newer NixOS release without changing anything: whether it still evaluates, what is missing from the binary cache, and whether the upgrade is safe."
 icon = "system-search-symbolic"
-category = "upgrades"
+page = "system"
+group = "Generations"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "safe"
 
-  [[recipe.params]]
+  [[action.params]]
   name = "target_version"
   label = "Target release"
   help = "A NixOS release such as 26.11."
@@ -217,50 +270,119 @@ risk = "safe"
   widget = "text"
   format = "nixos-version"
 
-[[recipe]]
-name = "rollback"
-title = "Roll Back"
-blurb = "Activate the previous NixOS generation and make it the boot default."
-icon = "edit-undo-symbolic"
-category = "upgrades"
+# Limine migration is two steps and a reboot in between: the first installs Limine
+# alongside the existing systemd-boot entry, the second removes the fallback once the
+# machine has demonstrably booted the new one.
+[[action]]
+id = "bootloader-switch"
+command = ["bootloader", "switch"]
+implements = "_bootloader-switch"
+title = "Migrate to Limine"
+blurb = "Install the Limine bootloader alongside the current systemd-boot entry and boot it first. UEFI only; nothing is removed."
+icon = "drive-harddisk-system-symbolic"
+page = "system"
+group = "Bootloader"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+risk = "medium"
+confirm = "This patches the flake wrapper, rebuilds the system, and makes Limine the first UEFI boot entry. The systemd-boot entry stays as a fallback. Reboot and confirm Limine works before finishing the migration."
+
+  [[action.params]]
+  name = "target"
+  label = "Bootloader"
+  help = "Limine is the only supported migration target."
+  default = "limine"
+  widget = "choice"
+  choices = ["limine"]
+
+[[action]]
+id = "bootloader-cleanup"
+command = ["bootloader", "cleanup"]
+implements = "_bootloader-cleanup"
+title = "Finish Limine Migration"
+blurb = "After Limine has booted successfully, remove the old systemd-boot entry and its leftover files."
+icon = "edit-clear-all-symbolic"
+page = "system"
+group = "Bootloader"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+risk = "destructive"
+confirm = "This deletes the systemd-boot fallback entry and its files. It only runs if this session actually booted via Limine, and there is no way back to systemd-boot without reinstalling it."
+
+[[action]]
+id = "set-hostname"
+command = ["set-hostname"]
+implements = "set-hostname"
+title = "Set Hostname"
+blurb = "Change the system hostname. Applies immediately and persists across rebuilds."
+icon = "computer-symbolic"
+page = "system"
+group = "Identity"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
-refresh = ["generation"]
 
-[[recipe]]
-name = "rollforward"
-title = "Roll Forward"
-blurb = "Activate the next newer NixOS generation and make it the boot default."
-icon = "edit-redo-symbolic"
-category = "upgrades"
+  # The justfile prompts when the name is empty, so the form never sends it empty.
+  [[action.params]]
+  name = "name"
+  label = "Hostname"
+  required = true
+  widget = "text"
+  format = "hostname"
+
+[[action]]
+id = "reboot"
+command = ["reboot"]
+implements = "reboot"
+title = "Reboot"
+blurb = "Restart this machine immediately."
+icon = "system-reboot-symbolic"
+page = "system"
+group = "Power"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
-refresh = ["generation"]
+confirm = "This machine restarts immediately. Unsaved work in other applications is lost."
 
-# ──────────────────────────── Features ────────────────────────────
+[[action]]
+id = "shutdown"
+command = ["shutdown"]
+implements = "shutdown"
+title = "Shut Down"
+blurb = "Power off this machine immediately."
+icon = "system-shutdown-symbolic"
+page = "system"
+group = "Power"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+risk = "medium"
+confirm = "This machine powers off immediately. Unsaved work in other applications is lost."
+
+# ─────────────────────────────── Features ───────────────────────────────
 # `_require-desktop-role` refuses these on stateless and headless-server, because
 # neither role wires /etc/nixos/features.nix into its module set.
 
-[[recipe]]
-name = "features"
+[[action]]
+id = "feature-list"
+command = ["feature", "list"]
+implements = "_feature-list"
 title = "List Features"
 blurb = "Show which optional feature modules are enabled on this host."
 icon = "view-list-symbolic"
-category = "features"
-roles = ["desktop", "htpc", "server"]
+page = "features"
+group = "Advanced"
+roles = ["desktop", "htpc", "server", "vanilla"]
 risk = "safe"
 
-[[recipe]]
-name = "enable-feature"
+[[action]]
+id = "feature-enable"
+command = ["feature", "enable"]
+implements = "_feature-enable"
 title = "Enable Feature"
 blurb = "Turn on an optional feature module. Takes effect on the next rebuild."
 icon = "list-add-symbolic"
-category = "features"
-roles = ["desktop", "htpc", "server"]
+page = "features"
+group = "Advanced"
+roles = ["desktop", "htpc", "server", "vanilla"]
 risk = "medium"
-refresh = ["features"]
+rebuild = true
 
-  [[recipe.params]]
+  [[action.params]]
   name = "feature"
   label = "Feature"
   required = true
@@ -268,17 +390,20 @@ refresh = ["features"]
   source = "features"
   extra = ["all"]
 
-[[recipe]]
-name = "disable-feature"
+[[action]]
+id = "feature-disable"
+command = ["feature", "disable"]
+implements = "_feature-disable"
 title = "Disable Feature"
 blurb = "Turn off an optional feature module. Takes effect on the next rebuild."
 icon = "list-remove-symbolic"
-category = "features"
-roles = ["desktop", "htpc", "server"]
+page = "features"
+group = "Advanced"
+roles = ["desktop", "htpc", "server", "vanilla"]
 risk = "medium"
-refresh = ["features"]
+rebuild = true
 
-  [[recipe.params]]
+  [[action.params]]
   name = "feature"
   label = "Feature"
   required = true
@@ -286,268 +411,654 @@ refresh = ["features"]
   source = "features"
   extra = ["all"]
 
-[[recipe]]
-name = "fix-flake"
+[[action]]
+id = "fix-flake"
+command = ["fix-flake"]
+implements = "fix-flake"
 title = "Repair Feature Wiring"
 blurb = "Patch /etc/nixos/flake.nix so it loads features.nix on every rebuild. Needed once on hosts whose wrapper predates feature toggles, and safe to re-run."
 icon = "applications-engineering-symbolic"
-category = "features"
+page = "features"
+group = "Advanced"
+roles = ["desktop", "htpc", "server", "vanilla"]
+risk = "medium"
+
+[[action]]
+id = "agent"
+command = ["agent"]
+implements = "agent"
+title = "Open AI Assistant"
+blurb = "Start Claude Code or OpenCode in /etc/nixos to change or troubleshoot this machine."
+icon = "user-available-symbolic"
+page = "features"
+group = "AI Assistant"
 roles = ["desktop", "htpc", "server"]
 risk = "medium"
-needs_upstream = true
+mode = "terminal"
+mode_reason = "The assistant is a full-screen terminal program that runs as you."
 
-# ────────────────────── Server Services ──────────────────────
+[[action]]
+id = "diagnose"
+command = ["diagnose"]
+implements = "diagnose"
+title = "Diagnose a Problem"
+blurb = "Have the AI assistant explain failed units and this boot's errors, one service, or a failed rebuild. Read-only."
+icon = "dialog-question-symbolic"
+page = "features"
+group = "AI Assistant"
+roles = ["desktop", "htpc", "server"]
+risk = "safe"
+mode = "terminal"
+mode_reason = "The assistant answers in an interactive terminal session that runs as you."
+
+  [[action.params]]
+  name = "target"
+  label = "What to look at"
+  help = "Leave empty for failed units and this boot's errors; enter a unit name, or `rebuild` to reproduce a failed rebuild."
+  widget = "text"
+  format = "slug"
+
+# ─────────────────────────────── VPN & Network ───────────────────────────────
+# The VPN actions wrap the vexos-vpn CLI, installed by the `vpn` feature (desktop,
+# htpc) and always present on stateless.
+
+[[action]]
+id = "vpn-status"
+command = ["vpn", "status"]
+implements = "_vpn-status"
+title = "VPN Status"
+blurb = "Show the VPN connection and kill switch state."
+icon = "network-vpn-symbolic"
+page = "network"
+group = "VPN"
+roles = ["desktop", "htpc", "stateless"]
+risk = "safe"
+
+[[action]]
+id = "vpn-up"
+command = ["vpn", "up"]
+implements = "_vpn-up"
+title = "Connect VPN"
+blurb = "Connect to Private Internet Access."
+icon = "network-vpn-symbolic"
+page = "network"
+group = "VPN"
+roles = ["desktop", "htpc", "stateless"]
+risk = "medium"
+
+[[action]]
+id = "vpn-down"
+command = ["vpn", "down"]
+implements = "_vpn-down"
+title = "Disconnect VPN"
+blurb = "Disconnect from Private Internet Access. With the kill switch on, this leaves the machine offline."
+icon = "network-vpn-disconnected-symbolic"
+page = "network"
+group = "VPN"
+roles = ["desktop", "htpc", "stateless"]
+risk = "medium"
+
+[[action]]
+id = "vpn-region"
+command = ["vpn", "region"]
+implements = "_vpn-region"
+title = "Choose VPN Region"
+blurb = "Pick a PIA region, or auto for the fastest. Reconnects if connected."
+icon = "mark-location-symbolic"
+page = "network"
+group = "VPN"
+roles = ["desktop", "htpc", "stateless"]
+risk = "medium"
+
+  [[action.params]]
+  name = "region"
+  label = "Region"
+  required = true
+  widget = "text"
+  format = "slug"
+
+[[action]]
+id = "vpn-protocol"
+command = ["vpn", "protocol"]
+implements = "_vpn-protocol"
+title = "Choose VPN Protocol"
+blurb = "WireGuard is the default; OpenVPN is the fallback. Reconnects if connected."
+icon = "network-wired-symbolic"
+page = "network"
+group = "VPN"
+roles = ["desktop", "htpc", "stateless"]
+risk = "medium"
+
+  [[action.params]]
+  name = "protocol"
+  label = "Protocol"
+  required = true
+  widget = "choice"
+  choices = ["wireguard", "openvpn"]
+
+[[action]]
+id = "vpn-regions"
+command = ["vpn", "regions"]
+implements = "_vpn-regions"
+title = "List VPN Regions"
+blurb = "Show every PIA region, with latency after an automatic connect."
+icon = "view-list-symbolic"
+page = "network"
+group = "VPN Account"
+roles = ["desktop", "htpc", "stateless"]
+risk = "safe"
+
+[[action]]
+id = "vpn-login"
+command = ["vpn", "login"]
+implements = "_vpn-login"
+title = "Sign In to PIA"
+blurb = "Store your PIA username and password in a root-only file. Needed once."
+icon = "dialog-password-symbolic"
+page = "network"
+group = "VPN Account"
+roles = ["desktop", "htpc", "stateless"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "vexos-vpn asks for the username and password itself."
+
+[[action]]
+id = "vpn-selftest"
+command = ["vpn", "selftest"]
+implements = "_vpn-selftest"
+title = "Test VPN Sign-In"
+blurb = "Check the stored PIA credentials work. Prints OK or FAILED, never the credentials."
+icon = "object-select-symbolic"
+page = "network"
+group = "VPN Account"
+roles = ["desktop", "htpc", "stateless"]
+risk = "safe"
+
+[[action]]
+id = "kill-switch-on"
+command = ["kill-switch", "on"]
+implements = "_kill-switch-on"
+title = "Turn Kill Switch On"
+blurb = "Block all internet traffic outside the PIA tunnel."
+icon = "security-high-symbolic"
+page = "network"
+group = "VPN"
+roles = ["desktop", "htpc", "stateless"]
+risk = "medium"
+
+[[action]]
+id = "kill-switch-off"
+command = ["kill-switch", "off"]
+implements = "_kill-switch-off"
+title = "Turn Kill Switch Off"
+blurb = "Restore normal internet access outside the VPN. On stateless this lasts until reboot."
+icon = "security-low-symbolic"
+page = "network"
+group = "VPN"
+roles = ["desktop", "htpc", "stateless"]
+risk = "destructive"
+confirm = "Traffic will leave this machine outside the VPN tunnel whenever the tunnel is down."
+
+[[action]]
+id = "setup-tailscale"
+command = ["setup-tailscale"]
+implements = "setup-tailscale"
+title = "Set Up Tailscale"
+blurb = "First-time Tailscale setup: let your account control Tailscale, then connect. Prints a link to sign in with in a browser."
+icon = "network-workgroup-symbolic"
+page = "network"
+group = "Tailscale"
+roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "It makes your own account the Tailscale operator, so it has to run as you."
+
+# ─────────────────────────────── Services ───────────────────────────────
 # `_require-server-role` gates these on a variant containing "server", which covers
 # both the GUI server and headless-server roles.
 
-[[recipe]]
-name = "services"
-title = "Service Status"
-blurb = "List every server service module and whether it is enabled on this host."
-icon = "view-list-symbolic"
-category = "services"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-[[recipe]]
-name = "available-services"
-title = "Service Catalog"
-blurb = "List every server service module VexOS can enable, whether or not it runs here."
-icon = "view-grid-symbolic"
-category = "services"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-[[recipe]]
-name = "service-info"
-title = "Service Access Info"
-blurb = "Show ports, URLs and setup notes. With no service selected, covers everything currently enabled."
+[[action]]
+id = "service-list"
+command = ["service", "list"]
+implements = "_service-list"
+title = "Access Info for All Services"
+blurb = "Ports, URLs and setup notes for every enabled service."
 icon = "dialog-information-symbolic"
-category = "services"
+page = "services"
+group = "Overview"
 roles = ["server", "headless-server"]
 risk = "safe"
 
-  [[recipe.params]]
+[[action]]
+id = "service-available"
+command = ["service", "available"]
+implements = "_service-available"
+title = "Service Catalog"
+blurb = "Every server service module VexOS can enable, whether or not it runs here."
+icon = "view-grid-symbolic"
+page = "services"
+group = "Overview"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[action]]
+id = "service-info"
+command = ["service", "info"]
+implements = "_service-info"
+title = "Access Info"
+blurb = "Ports, URLs and setup notes for this service."
+icon = "dialog-information-symbolic"
+page = "services"
+group = "Service"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+  [[action.params]]
   name = "service"
   label = "Service"
   help = "Leave empty for every enabled service."
   widget = "choice-dynamic"
   source = "server-services"
 
-[[recipe]]
-name = "status"
-title = "Check Service"
-blurb = "Show a service's systemd status and whether it answers over HTTP."
-icon = "utilities-system-monitor-symbolic"
-category = "services"
+[[action]]
+id = "service-status"
+command = ["service", "status"]
+implements = "_service-status"
+title = "Check Status"
+blurb = "Its systemd status, and whether it answers over HTTP."
+icon = "task-due-symbolic"
+page = "services"
+group = "Service"
 roles = ["server", "headless-server"]
 risk = "safe"
 
-  [[recipe.params]]
+  [[action.params]]
   name = "service"
   label = "Service"
   required = true
   widget = "choice-dynamic"
   source = "server-services"
 
-[[recipe]]
-name = "restart"
-title = "Restart Service"
-blurb = "Restart every systemd unit belonging to a service, clearing a prior start-limit failure first."
+[[action]]
+id = "service-restart"
+command = ["service", "restart"]
+implements = "_service-restart"
+title = "Restart"
+blurb = "Restart every systemd unit belonging to this service, clearing an earlier start-limit failure first."
 icon = "view-refresh-symbolic"
-category = "services"
+page = "services"
+group = "Service"
 roles = ["server", "headless-server"]
 risk = "medium"
 
-  [[recipe.params]]
+  [[action.params]]
   name = "service"
   label = "Service"
   required = true
   widget = "choice-dynamic"
   source = "server-services"
 
-[[recipe]]
-name = "disable"
-title = "Disable Service"
-blurb = "Turn off a server service module. Takes effect on the next rebuild."
-icon = "list-remove-symbolic"
-category = "services"
-roles = ["server", "headless-server"]
-risk = "medium"
-
-  [[recipe.params]]
-  name = "service"
-  label = "Service"
-  required = true
-  widget = "choice-dynamic"
-  source = "server-services"
-
-[[recipe]]
-name = "enable"
-title = "Enable Service"
-blurb = "Turn on a server service module. Several services ask follow-up questions during setup, so this one runs in a terminal."
+[[action]]
+id = "service-enable"
+command = ["service", "enable"]
+implements = "_service-enable"
+title = "Enable"
+blurb = "Turn this service module on. Several services ask setup questions first. Takes effect on the next rebuild."
 icon = "list-add-symbolic"
-category = "services"
+page = "services"
+group = "Service"
 roles = ["server", "headless-server"]
 risk = "medium"
-terminal = true
+rebuild = true
+mode = "terminal"
+mode_reason = "Setup asks follow-up questions — storage, IP addresses, which parts of a stack to install."
 
-  [[recipe.params]]
+  [[action.params]]
   name = "service"
   label = "Service"
   required = true
   widget = "choice-dynamic"
   source = "server-services"
 
-[[recipe]]
-name = "enable-plex-pass"
+[[action]]
+id = "service-disable"
+command = ["service", "disable"]
+implements = "_service-disable"
+title = "Disable"
+blurb = "Turn this service module off. Its data is kept. Takes effect on the next rebuild."
+icon = "list-remove-symbolic"
+page = "services"
+group = "Service"
+roles = ["server", "headless-server"]
+risk = "medium"
+rebuild = true
+
+  [[action.params]]
+  name = "service"
+  label = "Service"
+  required = true
+  widget = "choice-dynamic"
+  source = "server-services"
+
+[[action]]
+id = "plex-pass-enable"
+command = ["plex-pass", "enable"]
+implements = "_plex-pass-enable"
 title = "Enable Plex Pass Transcoding"
-blurb = "Turn on Plex Pass hardware transcoding for an already-enabled Plex install."
+blurb = "Turn on Plex Pass hardware transcoding for an already-enabled Plex."
 icon = "video-display-symbolic"
-category = "services"
+page = "services"
+group = "Plex"
 roles = ["server", "headless-server"]
 risk = "medium"
+rebuild = true
 
-[[recipe]]
-name = "disable-plex-pass"
+[[action]]
+id = "plex-pass-disable"
+command = ["plex-pass", "disable"]
+implements = "_plex-pass-disable"
 title = "Disable Plex Pass Transcoding"
-blurb = "Turn off Plex Pass hardware transcoding and fall back to software transcoding."
+blurb = "Turn off hardware transcoding and fall back to software."
 icon = "video-display-symbolic"
-category = "services"
+page = "services"
+group = "Plex"
 roles = ["server", "headless-server"]
 risk = "medium"
+rebuild = true
 
-# ─────────────────────── Storage & Backup ───────────────────────
+# ─────────────────────────────── Storage & Backup ───────────────────────────────
 
-[[recipe]]
-name = "backup-now"
+[[action]]
+id = "backup-now"
+command = ["backup-now"]
+implements = "backup-now"
 title = "Run Backup Now"
-blurb = "Trigger a restic backup outside the daily timer. Requires the backup module to be enabled."
+blurb = "Start a restic backup of every enabled service outside the daily timer. Needs the backup service."
 icon = "document-save-symbolic"
-category = "storage"
+page = "storage"
+group = "Backups"
 roles = ["server", "headless-server"]
 risk = "medium"
 
-[[recipe]]
-name = "backup-plex"
+[[action]]
+id = "restore-service"
+command = ["restore-service"]
+implements = "restore-service"
+title = "Restore a Service"
+blurb = "Restore one service's data in place from the restic repository — the newest snapshot tagged with it, or a snapshot you name."
+icon = "document-revert-symbolic"
+page = "storage"
+group = "Backups"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "The service's current data is overwritten in place with the snapshot's contents."
+
+  [[action.params]]
+  name = "name"
+  label = "Service"
+  required = true
+  widget = "choice-dynamic"
+  source = "server-services"
+
+  [[action.params]]
+  name = "snapshot"
+  label = "Snapshot"
+  help = "A snapshot ID, or latest."
+  default = "latest"
+  widget = "text"
+  format = "slug"
+
+[[action]]
+id = "nas-sync-status"
+command = ["nas-sync-status"]
+implements = "nas-sync-status"
+title = "NAS Sync Status"
+blurb = "Schedule and last result of every NAS-to-NAS mirror job."
+icon = "media-playlist-repeat-symbolic"
+page = "storage"
+group = "Backups"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[action]]
+id = "nas-sync-now"
+command = ["nas-sync-now"]
+implements = "nas-sync-now"
+title = "Run NAS Sync Now"
+blurb = "Run one mirror job outside its timer."
+icon = "media-playlist-repeat-symbolic"
+page = "storage"
+group = "Backups"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[action.params]]
+  name = "name"
+  label = "Job"
+  help = "The job name from server-services.nix, for example tv."
+  required = true
+  widget = "text"
+  format = "slug"
+
+[[action]]
+id = "backup-plex"
+command = ["backup-plex"]
+implements = "backup-plex"
 title = "Back Up Plex"
 blurb = "Snapshot Plex's data directory to a single portable tar.gz, suitable for moving to a new server."
 icon = "media-record-symbolic"
-category = "storage"
+page = "storage"
+group = "Plex"
 roles = ["server", "headless-server"]
 risk = "medium"
 
-  [[recipe.params]]
+  [[action.params]]
   name = "dest"
   label = "Destination file"
   help = "Leave empty to write to the default location."
   widget = "path"
 
-[[recipe]]
-name = "restore-plex"
+[[action]]
+id = "restore-plex"
+command = ["restore-plex"]
+implements = "restore-plex"
 title = "Restore Plex"
-blurb = "Restore a Plex backup onto a freshly enabled Plex install. The existing data directory is kept as a timestamped .bak rather than deleted."
+blurb = "Restore a Plex backup onto a freshly enabled Plex. The existing data directory is kept as a timestamped .bak rather than deleted."
 icon = "document-revert-symbolic"
-category = "storage"
+page = "storage"
+group = "Plex"
 roles = ["server", "headless-server"]
 risk = "destructive"
-confirm = "This overwrites /var/lib/plex. The current contents are preserved as a timestamped .bak directory, but Plex must already be enabled and stopped on this server."
-needs_upstream = true
+confirm = "This overwrites /var/lib/plex. The current contents are preserved as a timestamped .bak directory, but Plex must already be enabled on this server."
 
-  [[recipe.params]]
+  [[action.params]]
   name = "tarball"
   label = "Backup file"
   required = true
   widget = "path"
   must_exist = true
 
-[[recipe]]
-name = "create-zfs-pool"
-title = "Create ZFS Pool"
-blurb = "Build a ZFS pool for Proxmox VM and container storage. Walks through disks, topology and a typed confirmation before erasing anything."
+[[action]]
+id = "zfs-pool"
+command = ["zfs-pool"]
+implements = "zfs-pool"
+title = "ZFS Pool Manager"
+blurb = "Create, import, scrub or destroy ZFS pools, and replace or add disks."
 icon = "drive-multidisk-symbolic"
-category = "storage"
+page = "storage"
+group = "Pools"
 roles = ["server", "headless-server"]
 risk = "destructive"
-terminal = true
+confirm = "The pool manager can erase whole disks. It asks you to choose disks and type a confirmation before erasing anything — read each step carefully."
+mode = "terminal"
+mode_reason = "A menu-driven wizard that walks through disks, layout and a typed confirmation."
 
-[[recipe]]
-name = "create-mergerfs-pool"
-title = "Create Bulk Pool"
-blurb = "Build a mergerfs + SnapRAID bulk pool from mixed-capacity drives and write a declarative storage-pool.nix."
+[[action]]
+id = "mergerfs-pool"
+command = ["mergerfs-pool"]
+implements = "mergerfs-pool"
+title = "Bulk Pool Manager"
+blurb = "Create a mergerfs + SnapRAID pool from mixed-size drives, add or remove disks, or run a parity sync."
 icon = "drive-multidisk-symbolic"
-category = "storage"
+page = "storage"
+group = "Pools"
 roles = ["server", "headless-server"]
 risk = "destructive"
-terminal = true
+confirm = "The bulk pool manager can format disks. It asks you to choose disks and confirm before formatting anything — read each step carefully."
+mode = "terminal"
+mode_reason = "A menu-driven wizard that walks through disks and parity layout."
 
-[[recipe]]
-name = "attach-remote-storage"
-title = "Attach Remote Storage"
-blurb = "Mount an NFS or SMB pool exported by another host so local services can use it. Client-side only — nothing on the remote host changes."
+[[action]]
+id = "remote-storage-attach"
+command = ["remote-storage", "attach"]
+implements = "_remote-storage-attach"
+title = "Attach Remote Share"
+blurb = "Mount an NFS or SMB share exported by another host. Nothing on the remote host changes. Takes effect on the next rebuild."
 icon = "folder-remote-symbolic"
-category = "storage"
+page = "storage"
+group = "Remote Storage"
+roles = ["desktop", "htpc", "server", "headless-server"]
+risk = "medium"
+rebuild = true
+mode = "terminal"
+mode_reason = "It asks for the host, share, mount point and credentials step by step."
+
+[[action]]
+id = "remote-storage-detach"
+command = ["remote-storage", "detach"]
+implements = "_remote-storage-detach"
+title = "Detach Remote Share"
+blurb = "Remove a share attached earlier and unmount it. Takes effect on the next rebuild."
+icon = "folder-remote-symbolic"
+page = "storage"
+group = "Remote Storage"
+roles = ["desktop", "htpc", "server", "headless-server"]
+risk = "medium"
+rebuild = true
+mode = "terminal"
+mode_reason = "It lists the configured shares and asks which to remove."
+
+# ─────────────────────────────── Cache & Kernel ───────────────────────────────
+
+[[action]]
+id = "cache-harmonia"
+command = ["cache", "harmonia"]
+implements = "_cache-harmonia"
+title = "Harmonia Status"
+blurb = "Check the Harmonia binary cache is live and print the substituter settings for other machines."
+icon = "dialog-information-symbolic"
+page = "cache"
+group = "Binary Cache"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[action]]
+id = "cache-push"
+command = ["cache", "push"]
+implements = "_cache-push"
+title = "Push to Attic"
+blurb = "Build this repo's custom packages and push them to an Attic cache. Needs an earlier attic login."
+icon = "go-up-symbolic"
+page = "cache"
+group = "Binary Cache"
 roles = ["server", "headless-server"]
 risk = "medium"
-terminal = true
 
-# ─────────────────────── Network & Remote ───────────────────────
+  [[action.params]]
+  name = "cache"
+  label = "Cache"
+  default = "vexos"
+  widget = "text"
+  format = "slug"
 
-[[recipe]]
-name = "setup-tailscale"
-title = "Set Up Tailscale"
-blurb = "First-time Tailscale setup: grant operator rights to this user and connect. Prints a URL to authenticate in a browser."
-icon = "network-vpn-symbolic"
-category = "network"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
+[[action]]
+id = "cache-bootstrap"
+command = ["cache", "bootstrap"]
+implements = "_cache-bootstrap"
+title = "Bootstrap Attic"
+blurb = "One-time Attic setup: create the cache, print its public key, and mint a push-only token for CI. Safe to re-run."
+icon = "folder-new-symbolic"
+page = "cache"
+group = "Binary Cache"
+roles = ["server", "headless-server"]
 risk = "medium"
 
-[[recipe]]
-name = "enable-kill-switch"
-title = "Enable VPN Kill Switch"
-blurb = "Block all clearnet egress whenever no VPN tunnel is active."
-icon = "security-high-symbolic"
-category = "network"
-roles = ["desktop", "htpc"]
+  [[action.params]]
+  name = "cache"
+  label = "Cache"
+  default = "vexos"
+  widget = "text"
+  format = "slug"
+
+[[action]]
+id = "kernel-status"
+command = ["kernel", "status"]
+implements = "_kernel-status"
+title = "Kernel Build Status"
+blurb = "Whether a custom kernel build is running, its last result, and which version is served."
+icon = "task-due-symbolic"
+page = "cache"
+group = "Kernel Builder"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[action]]
+id = "kernel-now"
+command = ["kernel", "now"]
+implements = "_kernel-now"
+title = "Build Kernel Now"
+blurb = "Start a custom kernel build instead of waiting for the nightly timer. It takes hours and runs in the background, so closing VexPortal is fine."
+icon = "system-run-symbolic"
+page = "cache"
+group = "Kernel Builder"
+roles = ["server", "headless-server"]
 risk = "medium"
 
-[[recipe]]
-name = "disable-kill-switch"
-title = "Disable VPN Kill Switch"
-blurb = "Restore normal clearnet egress with no VPN required."
-icon = "security-low-symbolic"
-category = "network"
-roles = ["desktop", "htpc"]
-risk = "destructive"
-confirm = "Traffic will leave this machine outside the VPN tunnel whenever the tunnel is down."
+  [[action.params]]
+  name = "name"
+  label = "Kernel"
+  default = "ogc"
+  widget = "text"
+  format = "slug"
 
-[[recipe]]
-name = "setup-rdp"
-title = "Set Remote Desktop Password"
-blurb = "Set the RDP password for this machine. Stored at /etc/nixos/secrets/rdp-password, never in the Nix store. Rebuild afterwards to activate."
-icon = "dialog-password-symbolic"
-category = "network"
-roles = ["desktop", "htpc", "server"]
-risk = "medium"
-needs_upstream = true
+[[action]]
+id = "kernel-log"
+command = ["kernel", "log"]
+implements = "_kernel-log"
+title = "Follow Kernel Build Log"
+blurb = "Watch a kernel build's output live."
+icon = "text-x-generic-symbolic"
+page = "cache"
+group = "Kernel Builder"
+roles = ["server", "headless-server"]
+risk = "safe"
+mode = "terminal"
+mode_reason = "It follows the log until you close it."
 
-  [[recipe.params]]
-  name = "password"
-  label = "RDP password"
-  help = "Sent straight to the recipe and never written to a log or the process list."
-  required = true
-  widget = "secret"
+  [[action.params]]
+  name = "name"
+  label = "Kernel"
+  default = "ogc"
+  widget = "text"
+  format = "slug"
 
-[[recipe]]
-name = "ssh"
+# ─────────────────────────────── Tools ───────────────────────────────
+
+[[action]]
+id = "ssh"
+command = ["ssh"]
+implements = "ssh"
 title = "Copy SSH Key"
-blurb = "Copy this machine's SSH key to a remote host so future connections need no password."
+blurb = "Copy your SSH key to another machine so future connections need no password. Creates a key first if you have none."
 icon = "network-transmit-symbolic"
-category = "network"
+page = "tools"
+group = "Your Account"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
+mode = "terminal"
+mode_reason = "It uses your own SSH key, and the remote machine asks for its password."
 
-  [[recipe.params]]
+  [[action.params]]
   name = "target"
   label = "Target"
   help = "user@host, for example nimda@10.35.1.50."
@@ -555,152 +1066,36 @@ risk = "medium"
   widget = "text"
   format = "ssh-target"
 
-# ─────────────────────────── Binary Cache ───────────────────────────
-
-[[recipe]]
-name = "harmonia-info"
-title = "Harmonia Cache Info"
-blurb = "Check the Harmonia binary cache is live and print the substituter configuration to paste on other machines."
-icon = "dialog-information-symbolic"
-category = "cache"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-[[recipe]]
-name = "attic-push"
-title = "Push to Attic"
-blurb = "Build this repo's custom packages and push them to an Attic cache. Requires an earlier attic login."
-icon = "go-up-symbolic"
-category = "cache"
-roles = ["server", "headless-server"]
-risk = "medium"
-
-  [[recipe.params]]
-  name = "cache"
-  label = "Cache"
-  default = "vexos"
-  widget = "text"
-  format = "slug"
-
-[[recipe]]
-name = "attic-bootstrap"
-title = "Bootstrap Attic Cache"
-blurb = "One-time Attic setup: mint an admin token, create the cache, print its public key, and mint a push-only token for CI. Safe to re-run."
-icon = "folder-new-symbolic"
-category = "cache"
-roles = ["server", "headless-server"]
-risk = "medium"
-
-  [[recipe.params]]
-  name = "cache"
-  label = "Cache"
-  default = "vexos"
-  widget = "text"
-  format = "slug"
-
-[[recipe]]
-name = "kernel-build-status"
-title = "Kernel Build Status"
-blurb = "Show whether a custom kernel build is running, how long it has taken, its last result, and which version is currently served."
-icon = "utilities-system-monitor-symbolic"
-category = "cache"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-[[recipe]]
-name = "kernel-build-log"
-title = "Kernel Build Log"
-blurb = "Follow a custom kernel build's output live."
-icon = "text-x-generic-symbolic"
-category = "cache"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-  [[recipe.params]]
-  name = "name"
-  label = "Kernel"
-  default = "ogc"
-  widget = "text"
-  format = "slug"
-
-[[recipe]]
-name = "kernel-build-now"
-title = "Build Kernel Now"
-blurb = "Start a custom kernel build instead of waiting for the nightly timer. Takes hours and runs in the background, so it is safe to close this window."
-icon = "system-run-symbolic"
-category = "cache"
-roles = ["server", "headless-server"]
-risk = "medium"
-
-  [[recipe.params]]
-  name = "name"
-  label = "Kernel"
-  default = "ogc"
-  widget = "text"
-  format = "slug"
-
-# ──────────────────────────── System ────────────────────────────
-
-[[recipe]]
-name = "set-hostname"
-title = "Set Hostname"
-blurb = "Change the system hostname. Applies immediately and persists across rebuilds."
-icon = "computer-symbolic"
-category = "system"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
-risk = "medium"
-refresh = ["hostname"]
-needs_upstream = true
-
-  [[recipe.params]]
-  name = "name"
-  label = "Hostname"
-  required = true
-  widget = "text"
-  format = "hostname"
-
-[[recipe]]
-name = "secrets-init"
-title = "Set Up Encrypted Secrets"
-blurb = "Guided one-time setup for the sops-nix secrets backend. Generates this host's age key and prints the .sops.yaml snippet to add to the repo."
-icon = "dialog-password-symbolic"
-category = "system"
-roles = ["server", "headless-server"]
-risk = "medium"
-terminal = true
-
-[[recipe]]
-name = "reset-defaults"
+[[action]]
+id = "reset-defaults"
+command = ["reset-defaults"]
+implements = "reset-defaults"
 title = "Reset Desktop to Defaults"
-blurb = "Clear the user dconf database so every GNOME setting falls back to the VexOS defaults. Best run from a terminal outside a GNOME session."
+blurb = "Clear your GNOME settings so everything falls back to the VexOS defaults."
 icon = "edit-clear-all-symbolic"
-category = "system"
+page = "tools"
+group = "Your Account"
 roles = ["desktop", "htpc", "server", "stateless"]
 risk = "destructive"
-confirm = "Every GNOME customisation on this account is lost — extensions, app folders, keyboard shortcuts and appearance all return to the VexOS defaults."
-needs_upstream = true
+confirm = "Every GNOME customisation on your account is lost — extensions, app folders, keyboard shortcuts and appearance all return to the VexOS defaults."
+mode = "terminal"
+mode_reason = "It resets your own settings database, so it has to run as you."
 
-[[recipe]]
-name = "reboot"
-title = "Reboot"
-blurb = "Restart this machine immediately."
-icon = "system-reboot-symbolic"
-category = "system"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
+[[action]]
+id = "secrets-init"
+command = ["secrets-init"]
+implements = "secrets-init"
+title = "Set Up Encrypted Secrets"
+blurb = "Guided one-time setup for sops-nix secrets: generate this host's age key and print the .sops.yaml snippet to add to the repo."
+icon = "dialog-password-symbolic"
+page = "tools"
+group = "This Machine"
+roles = ["server", "headless-server"]
 risk = "medium"
-confirm = "This machine restarts immediately. Unsaved work in other applications is lost."
+mode = "terminal"
+mode_reason = "A guided setup that prints keys and instructions to act on."
 
-[[recipe]]
-name = "shutdown"
-title = "Shut Down"
-blurb = "Power off this machine immediately."
-icon = "system-shutdown-symbolic"
-category = "system"
-roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
-risk = "medium"
-confirm = "This machine powers off immediately. Unsaved work in other applications is lost."
-
-# ─────────────────────────── Not surfaced ───────────────────────────
+# ─────────────────────────────── Not surfaced ───────────────────────────────
 # Public justfile recipes VexPortal deliberately leaves to the CLI. Listed here so the
 # drift check stays quiet about them rather than being switched off entirely.
 

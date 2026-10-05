@@ -29,6 +29,7 @@
           buildInputs = with pkgs; [
             gtk4
             libadwaita
+            vte-gtk4
             glib
             dbus
           ];

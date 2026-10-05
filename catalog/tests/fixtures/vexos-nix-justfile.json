@@ -1,0 +1,776 @@
+{
+ "assignments": {
+  "_feature_names": {
+   "value": "gaming development print3d virtualization sunshine vpn kernel ai"
+  },
+  "_server_service_names": {
+   "value": "adguard arcane arr attic audiobookshelf authelia backup caddy cockpit code-server docker dockhand forgejo grimmory harmonia headscale kernel-builder home-registry homepage humidor immich jellyfin joplin kiji-proxy mealie nas netdata nextcloud nginx nginx-proxy-manager ntfy paperless papermc photoprism plex podman portainer prometheus proxmox scrutiny searxng seerr syncthing tautulli traefik unbound uptime-kuma vaultwarden vexboard zigbee2mqtt"
+  },
+  "_service_catalog": {
+   "value": "Books & Reading|grimmory|Self-hosted ebook/comic/audiobook library\nFiles & Storage|immich|Self-hosted photo & video backup\nFiles & Storage|nextcloud|File sync, sharing & collaboration suite\nFiles & Storage|photoprism|AI-powered photo management & sharing\nFiles & Storage|syncthing|Continuous peer-to-peer file synchronisation\nGaming|papermc|High-performance Minecraft Java server\nInfrastructure|arcane|Web UI for managing Docker/Podman containers\nInfrastructure|attic|Self-hosted Nix binary cache server\nInfrastructure|backup|Declarative restic backups of enabled services\nInfrastructure|caddy|Automatic HTTPS web server & reverse proxy\nInfrastructure|docker|Container runtime (Docker Engine)\nInfrastructure|dockhand|Web UI for managing Docker/Podman containers\nInfrastructure|harmonia|Nix binary cache serving this host's store\nInfrastructure|kernel-builder|Builds custom kernels for Harmonia to serve\nInfrastructure|nginx|High-performance HTTP server & reverse proxy\nInfrastructure|nginx-proxy-manager|Web UI for Nginx reverse proxy & SSL certs\nInfrastructure|podman|Rootless OCI container runtime\nInfrastructure|portainer|Web UI for managing Docker/Podman stacks\nInfrastructure|traefik|Cloud-native edge router & reverse proxy\nInventory|home-registry|Self-hosted home inventory tracker\nInventory|humidor|Self-hosted cigar collection inventory tracker\nMedia|audiobookshelf|Self-hosted audiobook & podcast server\nMedia|jellyfin|Open-source media streaming server\nMedia|plex|Personal media library & streaming server\nMedia|tautulli|Monitoring & analytics for Plex Media Server\nMedia Requests & Automation|arr|*arr suite \u2014 Sonarr, Radarr, Lidarr, Prowlarr, SABnzbd, Maintainerr\nMedia Requests & Automation|seerr|Media request manager (Jellyfin, Plex, Emby)\nMonitoring & Admin|cockpit|Web-based Linux server management console\nMonitoring & Admin|nas|Cockpit + NAS plugins (Samba, NFS, ZFS)\nMonitoring & Admin|netdata|Real-time performance & health monitoring\nMonitoring & Admin|prometheus|Metrics collection & alerting toolkit\nMonitoring & Admin|scrutiny|S.M.A.R.T. disk health monitoring dashboard\nMonitoring & Admin|uptime-kuma|Self-hosted uptime & status page monitoring\nMonitoring & Admin|vexboard|VexOS Server dashboard\nNetworking & Security|adguard|DNS-based ad & tracker blocker\nNetworking & Security|authelia|Single sign-on & two-factor auth gateway\nNetworking & Security|headscale|Self-hosted Tailscale-compatible VPN (WireGuard)\nNetworking & Security|unbound|Validating, recursive, caching DNS resolver\nNetworking & Security|vaultwarden|Lightweight Bitwarden-compatible password manager\nProductivity|code-server|VS Code running in the browser\nProductivity|forgejo|Self-hosted Git & code collaboration (Gitea fork)\nProductivity|homepage|Customisable server dashboard & start page\nProductivity|joplin|Self-hosted Joplin Server note sync backend\nProductivity|mealie|Self-hosted recipe manager & meal planner\nProductivity|paperless|Document scanning, OCR, tagging & archival\nSmart Home & Notifications|ntfy|Simple HTTP-based push notification server\nSmart Home & Notifications|zigbee2mqtt|Zigbee \u2192 MQTT bridge (no proprietary hub needed)\nAI & Privacy|kiji-proxy|Privacy-first OpenAI-compatible AI API proxy\nAI & Privacy|searxng|Privacy-respecting metasearch engine (no tracking, no query logging)\nExperimental|proxmox|Proxmox VE integration (experimental)\n"
+  }
+ },
+ "recipes": {
+  "_bootloader-cleanup": {
+   "doc": "cannot be run before a successful reboot has actually happened.",
+   "parameters": [],
+   "private": true
+  },
+  "_bootloader-switch": {
+   "doc": "Example: just bootloader switch limine",
+   "parameters": [
+    {
+     "default": "limine",
+     "kind": "singular",
+     "name": "target"
+    }
+   ],
+   "private": true
+  },
+  "_cache-bootstrap": {
+   "doc": "Usage: just cache bootstrap [cache]",
+   "parameters": [
+    {
+     "default": "vexos",
+     "kind": "singular",
+     "name": "cache"
+    }
+   ],
+   "private": true
+  },
+  "_cache-harmonia": {
+   "doc": "Usage: just cache harmonia",
+   "parameters": [],
+   "private": true
+  },
+  "_cache-push": {
+   "doc": "once (see `just service enable attic`'s setup guidance). Usage: just cache push [cache]",
+   "parameters": [
+    {
+     "default": "vexos",
+     "kind": "singular",
+     "name": "cache"
+    }
+   ],
+   "private": true
+  },
+  "_confirm": {
+   "doc": "Usage: if [ \"$(just _confirm 'Continue? [y/N]: ')\" = \"true\" ]; then ... fi",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "prompt"
+    }
+   ],
+   "private": true
+  },
+  "_feature-disable": {
+   "doc": "Use 'just feature disable all' to disable every feature.",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "feature"
+    }
+   ],
+   "private": true
+  },
+  "_feature-enable": {
+   "doc": "Use 'just feature enable all' to enable every feature.",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "feature"
+    }
+   ],
+   "private": true
+  },
+  "_feature-list": {
+   "doc": "List all optional features and their enabled/disabled status.",
+   "parameters": [],
+   "private": true
+  },
+  "_kernel-cache-guard": {
+   "doc": "and lets the rebuild proceed normally.",
+   "parameters": [],
+   "private": true
+  },
+  "_kernel-log": {
+   "doc": "Usage: just kernel log [name]",
+   "parameters": [
+    {
+     "default": "ogc",
+     "kind": "singular",
+     "name": "name"
+    }
+   ],
+   "private": true
+  },
+  "_kernel-now": {
+   "doc": "Usage: just kernel now [name]",
+   "parameters": [
+    {
+     "default": "ogc",
+     "kind": "singular",
+     "name": "name"
+    }
+   ],
+   "private": true
+  },
+  "_kernel-status": {
+   "doc": "and which version is currently pinned and served.",
+   "parameters": [],
+   "private": true
+  },
+  "_kill-switch-off": {
+   "doc": "Turn the kill switch off. On stateless this asks for your password and lasts until reboot.",
+   "parameters": [],
+   "private": true
+  },
+  "_kill-switch-on": {
+   "doc": "Turn the kill switch on \u2014 blocks all internet traffic outside the PIA tunnel.",
+   "parameters": [],
+   "private": true
+  },
+  "_menu": {
+   "doc": "Runs the hidden recipe _<group>-<key>, so `just vpn up` == `just _vpn-up`.",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "group"
+    },
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "title"
+    },
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "argstr"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "items"
+    }
+   ],
+   "private": true
+  },
+  "_plex-pass-disable": {
+   "doc": null,
+   "parameters": [],
+   "private": true
+  },
+  "_plex-pass-enable": {
+   "doc": "Usage: just plex-pass enable   /   just plex-pass disable",
+   "parameters": [],
+   "private": true
+  },
+  "_remote-storage-attach": {
+   "doc": "declarative /etc/nixos/storage-remote.nix; apply with `just rebuild`.",
+   "parameters": [],
+   "private": true
+  },
+  "_remote-storage-detach": {
+   "doc": "apply with `just rebuild`.",
+   "parameters": [],
+   "private": true
+  },
+  "_require-desktop-role": {
+   "doc": "supported there \u2014 neither role wires /etc/nixos/features.nix into its module set).",
+   "parameters": [],
+   "private": true
+  },
+  "_require-remote-storage-role": {
+   "doc": "fail evaluation).",
+   "parameters": [],
+   "private": true
+  },
+  "_require-server-role": {
+   "doc": "Guard: abort if the current host is not running a server variant.",
+   "parameters": [],
+   "private": true
+  },
+  "_resolve-flake-dir": {
+   "doc": "Usage: just _resolve-flake-dir vexos-desktop-amd [/path/to/flake]",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "target"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "flake_override"
+    }
+   ],
+   "private": true
+  },
+  "_run-storage-script": {
+   "doc": "storage-pool recipes below. Extra arguments are passed to the script.",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "script"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": true
+  },
+  "_service-available": {
+   "doc": "List all available server service modules (catalog view, no role required).",
+   "parameters": [],
+   "private": true
+  },
+  "_service-disable": {
+   "doc": "Disable a server service module.  Usage: just service disable docker",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "service"
+    }
+   ],
+   "private": true
+  },
+  "_service-enable": {
+   "doc": "Enable a server service module.  Usage: just service enable docker",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "service"
+    }
+   ],
+   "private": true
+  },
+  "_service-info": {
+   "doc": "just service info jellyfin   \u2014 specific service",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "service"
+    }
+   ],
+   "private": true
+  },
+  "_service-list": {
+   "doc": "List enabled server services and how to access them.",
+   "parameters": [],
+   "private": true
+  },
+  "_service-restart": {
+   "doc": "start-limit-hit failure first. Usage: just service restart joplin",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "service"
+    }
+   ],
+   "private": true
+  },
+  "_service-status": {
+   "doc": "Usage: just service status jellyfin",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "service"
+    }
+   ],
+   "private": true
+  },
+  "_service-units": {
+   "doc": "Prints space-separated unit names (without .service) to stdout.",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "service"
+    }
+   ],
+   "private": true
+  },
+  "_vpn-down": {
+   "doc": "Disconnect the PIA VPN (with the kill switch on, this leaves you offline).",
+   "parameters": [],
+   "private": true
+  },
+  "_vpn-login": {
+   "doc": "Store PIA credentials (root-only file; prompts, never echoed). Run once.",
+   "parameters": [],
+   "private": true
+  },
+  "_vpn-protocol": {
+   "doc": "Switch protocol: wireguard (default) or openvpn (backup). Reconnects if connected.",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "protocol"
+    }
+   ],
+   "private": true
+  },
+  "_vpn-region": {
+   "doc": "Choose a PIA region, or \"auto\" for the fastest. Reconnects if connected.",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "region"
+    }
+   ],
+   "private": true
+  },
+  "_vpn-regions": {
+   "doc": "List PIA regions (latency shown after an auto connect).",
+   "parameters": [],
+   "private": true
+  },
+  "_vpn-selftest": {
+   "doc": "Check the PIA login works \u2014 prints OK/FAILED only, never the credentials or token.",
+   "parameters": [],
+   "private": true
+  },
+  "_vpn-status": {
+   "doc": "Show VPN and kill switch state.",
+   "parameters": [],
+   "private": true
+  },
+  "_vpn-up": {
+   "doc": "Connect the PIA VPN.",
+   "parameters": [],
+   "private": true
+  },
+  "agent": {
+   "doc": "Open your AI assistant (Claude Code or OpenCode) in /etc/nixos.",
+   "parameters": [],
+   "private": false
+  },
+  "backup-now": {
+   "doc": "Requires vexos.server.backup.enable = true.",
+   "parameters": [],
+   "private": false
+  },
+  "backup-plex": {
+   "doc": "suitable for moving to a new server. Usage: just backup-plex [dest.tar.gz]",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "dest"
+    }
+   ],
+   "private": false
+  },
+  "bootloader": {
+   "doc": "Bootloader: migrate to Limine (UEFI, opt-in), then clean up the old entries.",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": false
+  },
+  "build": {
+   "doc": "Example: just build desktop amd",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "role"
+    },
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "variant"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "flake"
+    }
+   ],
+   "private": false
+  },
+  "cache": {
+   "doc": "Binary caches: Attic (push/bootstrap) and Harmonia (status and client config).",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": false
+  },
+  "default": {
+   "doc": "List all available recipes (default when running `just` with no arguments).",
+   "parameters": [],
+   "private": true
+  },
+  "deploy": {
+   "doc": "seconds and are never the cause of a cache block.",
+   "parameters": [],
+   "private": false
+  },
+  "diagnose": {
+   "doc": "Have your AI assistant explain a problem: just diagnose [unit|rebuild]",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "target"
+    }
+   ],
+   "private": false
+  },
+  "feature": {
+   "doc": "Optional feature modules (desktop roles): list, enable, disable.",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": false
+  },
+  "fix-flake": {
+   "doc": "Safe to re-run \u2014 exits immediately if the wrapper is already up to date.",
+   "parameters": [],
+   "private": false
+  },
+  "kernel": {
+   "doc": "Custom kernel builder (server): build now, check status, follow the log.",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": false
+  },
+  "kill-switch": {
+   "doc": "VPN kill switch: block all traffic outside the PIA tunnel (on) or restore normal access (off).",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": false
+  },
+  "mergerfs-pool": {
+   "doc": "destroy, sync, scrub)",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": true
+  },
+  "nas-sync-now": {
+   "doc": "Usage: just nas-sync-now tv",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "name"
+    }
+   ],
+   "private": false
+  },
+  "nas-sync-status": {
+   "doc": "fixed list.",
+   "parameters": [],
+   "private": false
+  },
+  "plex-pass": {
+   "doc": "Plex Pass hardware transcoding (server): enable or disable.",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": true
+  },
+  "prune-services": {
+   "doc": "leave the next update failing exactly as before.",
+   "parameters": [],
+   "private": true
+  },
+  "reboot": {
+   "doc": "Reboot the system immediately.",
+   "parameters": [],
+   "private": false
+  },
+  "rebuild": {
+   "doc": "Rebuild the system using the current variant.",
+   "parameters": [],
+   "private": false
+  },
+  "remote-storage": {
+   "doc": "Remote storage: attach or detach an NFS/SMB share from another host (apply with `just rebuild`).",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": false
+  },
+  "reset-defaults": {
+   "doc": "results, since GNOME may re-write some keys while running.",
+   "parameters": [],
+   "private": false
+  },
+  "restore-plex": {
+   "doc": "directory rather than deleted. Usage: just restore-plex <tarball>",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "tarball"
+    }
+   ],
+   "private": false
+  },
+  "restore-service": {
+   "doc": "place after a typed confirmation. Usage: just restore-service <name> [snapshot]",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "name"
+    },
+    {
+     "default": "latest",
+     "kind": "singular",
+     "name": "snapshot"
+    }
+   ],
+   "private": false
+  },
+  "rollback": {
+   "doc": "Roll back to the previous NixOS generation and set it as the boot default.",
+   "parameters": [],
+   "private": false
+  },
+  "rollforward": {
+   "doc": "Roll forward to the next (newer) NixOS generation and set it as the boot default.",
+   "parameters": [],
+   "private": false
+  },
+  "secrets-init": {
+   "doc": "the right tool for the job.",
+   "parameters": [],
+   "private": false
+  },
+  "service": {
+   "doc": "Server services (server roles): list, catalog, info, status, restart, enable, disable.",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": true
+  },
+  "set-hostname": {
+   "doc": "just set-hostname            \u2014 interactive prompt",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "name"
+    }
+   ],
+   "private": false
+  },
+  "setup-tailscale": {
+   "doc": "On first run, Tailscale will print a URL to authenticate \u2014 open it in a browser.",
+   "parameters": [],
+   "private": false
+  },
+  "shutdown": {
+   "doc": "Shut down the system immediately.",
+   "parameters": [],
+   "private": false
+  },
+  "ssh": {
+   "doc": "just ssh nimda@10.35.1.50   \u2014 direct",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "target"
+    }
+   ],
+   "private": false
+  },
+  "switch": {
+   "doc": "just switch desktop vm \"\" \"\" virtualbox \u2014 VM hypervisor (qemu / virtualbox)",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "role"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "variant"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "flake"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "de"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "vmp"
+    }
+   ],
+   "private": false
+  },
+  "update": {
+   "doc": "never the cause of the block. See pkgs/vexos-update/default.nix.",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "role"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "variant"
+    }
+   ],
+   "private": false
+  },
+  "update-all": {
+   "doc": "and take a long time.  For normal daily use, run 'just update' instead.",
+   "parameters": [],
+   "private": false
+  },
+  "upgrade-analysis": {
+   "doc": "just upgrade-analysis 26.11    \u2014 analyse upgrade to 26.11",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "target_version"
+    }
+   ],
+   "private": false
+  },
+  "variant": {
+   "doc": "Print the active role and GPU variant (e.g. vexos-desktop-amd).",
+   "parameters": [],
+   "private": false
+  },
+  "vpn": {
+   "doc": "PIA VPN (desktop, htpc, stateless): thin wrappers around the vexos-vpn CLI.",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "action"
+    },
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": false
+  },
+  "zfs-pool": {
+   "doc": "replace, add, attach, detach, scrub, clear)",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "star",
+     "name": "args"
+    }
+   ],
+   "private": true
+  }
+ }
+}

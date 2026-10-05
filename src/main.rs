@@ -2,8 +2,10 @@
 
 mod app;
 mod dbus_client;
+mod job;
 mod just;
 mod system;
+mod terminal;
 mod ui;
 
 use adw::prelude::*;

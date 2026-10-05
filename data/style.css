@@ -32,41 +32,39 @@
   background-color: alpha(currentColor, 0.04);
 }
 
-/* ── Risk pips ────────────────────────────────────────────────── */
-/* Colour alone never carries the meaning: each pip has a tooltip and destructive
- * actions also get a text confirmation before anything runs. */
+/* ── Pills ────────────────────────────────────────────────────── */
+/* Colour alone never carries the meaning: each pill says what it means in words, has
+ * a tooltip, and destructive actions also get a text confirmation before running. */
 
-.vex-risk {
+.vex-pill {
   border-radius: 9999px;
   padding: 1px 9px;
   font-size: 0.8em;
   font-weight: bold;
+  background-color: alpha(currentColor, 0.1);
 }
 
-.vex-risk.safe {
+.vex-pill.safe {
   background-color: alpha(@success_color, 0.15);
   color: @success_color;
 }
 
-.vex-risk.medium {
-  background-color: alpha(@warning_color, 0.15);
-  color: @warning_color;
-}
-
-.vex-risk.destructive {
+.vex-pill.destructive {
   background-color: alpha(@error_color, 0.15);
   color: @error_color;
 }
 
-.vex-badge {
-  border-radius: 9999px;
-  padding: 1px 9px;
-  font-size: 0.8em;
-  background-color: alpha(currentColor, 0.1);
-  opacity: 0.8;
+/* ── VPN status card ──────────────────────────────────────────── */
+
+.vex-status-row.connected .vex-status-icon {
+  color: @success_color;
 }
 
-/* ── Run view ─────────────────────────────────────────────────── */
+.vex-status-row.disconnected .vex-status-icon {
+  color: @warning_color;
+}
+
+/* ── Job output and terminal ──────────────────────────────────── */
 
 .vex-log {
   font-family: monospace;
@@ -77,4 +75,12 @@
 .vex-log-view {
   background-color: alpha(currentColor, 0.03);
   border-radius: 8px;
+}
+
+.vex-terminal-frame {
+  border-radius: 8px;
+}
+
+.vex-terminal {
+  padding: 8px;
 }

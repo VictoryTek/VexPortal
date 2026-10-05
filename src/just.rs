@@ -2,13 +2,14 @@
 //!
 //! `just --dump --dump-format json` needs no privileges — the justfile is
 //! world-readable — so the GUI runs it directly rather than through the daemon. It
-//! supplies two things: the values behind the dynamic dropdowns (`_feature_names`,
-//! `_server_service_names`) and the ground truth for the drift check.
+//! supplies the values behind the dynamic lists (`_feature_names`,
+//! `_server_service_names`, `_service_catalog`) and the ground truth for the drift
+//! check.
 
 use std::collections::BTreeSet;
 use std::process::Command;
-use vexportal_catalog::drift::{compare, Drift, JustDump};
-use vexportal_catalog::{Catalog, DynamicSource};
+use vexportal_catalog::drift::{compare, Drift, JustDump, ServiceEntry};
+use vexportal_catalog::{Action, Catalog, DynamicSource};
 
 pub const JUSTFILE: &str = "/etc/nixos/justfile";
 
@@ -17,6 +18,8 @@ pub const JUSTFILE: &str = "/etc/nixos/justfile";
 pub struct JustfileFacts {
     pub features: Vec<String>,
     pub server_services: Vec<String>,
+    /// Every server service module, grouped and described, from `_service_catalog`.
+    pub service_catalog: Vec<ServiceEntry>,
     /// Recipe names this host's justfile actually defines.
     ///
     /// `/etc/nixos/justfile` is a copy taken by the last rebuild, so a host that has
@@ -78,6 +81,7 @@ impl JustfileFacts {
         Self {
             features: dump.list_variable(DynamicSource::Features.just_variable()),
             server_services: dump.list_variable(DynamicSource::ServerServices.just_variable()),
+            service_catalog: dump.service_catalog(),
             available: dump.recipe_names().map(str::to_string).collect(),
             drift: compare(catalog, &dump),
             error: None,
@@ -98,13 +102,16 @@ impl JustfileFacts {
         choices
     }
 
-    /// Whether a catalog recipe can be run on this host at all.
+    /// Whether a catalog action can be run on this host at all: both the recipe it
+    /// starts and the recipe that does the work have to exist.
     ///
     /// An empty `available` set means `just --dump` did not run, in which case
     /// nothing is hidden — a failure to introspect the justfile should not empty out
     /// the whole portal.
-    pub fn is_available(&self, recipe: &str) -> bool {
-        self.available.is_empty() || self.available.contains(recipe)
+    pub fn is_available(&self, action: &Action) -> bool {
+        self.available.is_empty()
+            || (self.available.contains(&action.command[0])
+                && self.available.contains(&action.implements))
     }
 
     /// Recipes the catalog knows about that this host's justfile does not have yet.
@@ -181,10 +188,10 @@ mod tests {
     fn a_host_that_has_not_rebuilt_is_told_so_without_alarm() {
         let summary = facts(vec![
             Drift::Missing {
-                recipe: "harmonia-info".into(),
+                recipe: "_cache-harmonia".into(),
             },
             Drift::Missing {
-                recipe: "kernel-build-now".into(),
+                recipe: "_kernel-now".into(),
             },
         ])
         .drift_summary()
@@ -199,7 +206,7 @@ mod tests {
     #[test]
     fn one_missing_recipe_reads_as_singular() {
         let summary = facts(vec![Drift::Missing {
-            recipe: "harmonia-info".into(),
+            recipe: "_cache-harmonia".into(),
         }])
         .drift_summary()
         .unwrap();
@@ -215,7 +222,7 @@ mod tests {
         // is the one that means VexPortal itself is wrong.
         let summary = facts(vec![
             Drift::Missing {
-                recipe: "harmonia-info".into(),
+                recipe: "_cache-harmonia".into(),
             },
             Drift::Unlisted {
                 recipe: "brand-new".into(),
@@ -244,16 +251,19 @@ mod tests {
         // An empty `available` set means `just --dump` failed. Hiding every recipe on
         // that basis would leave an empty portal, which is worse than letting the
         // daemon report the real error for one recipe.
-        assert!(JustfileFacts::default().is_available("rebuild"));
+        let catalog = Catalog::load().unwrap();
+        assert!(JustfileFacts::default().is_available(catalog.action("rebuild").unwrap()));
     }
 
     #[test]
     fn a_recipe_absent_from_this_host_is_hidden() {
+        let catalog = Catalog::load().unwrap();
         let facts = JustfileFacts {
-            available: ["rebuild".to_string()].into_iter().collect(),
+            available: ["rebuild", "cache"].into_iter().map(String::from).collect(),
             ..Default::default()
         };
-        assert!(facts.is_available("rebuild"));
-        assert!(!facts.is_available("harmonia-info"));
+        assert!(facts.is_available(catalog.action("rebuild").unwrap()));
+        // The menu exists but the recipe behind this entry does not.
+        assert!(!facts.is_available(catalog.action("cache-harmonia").unwrap()));
     }
 }

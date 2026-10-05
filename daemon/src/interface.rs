@@ -71,7 +71,7 @@ impl Daemon {
         let invocation = validate::build(&self.catalog, recipe, &answers).map_err(|e| {
             audit::rejected(&caller, recipe, &e.to_string());
             match e {
-                ValidationError::UnknownRecipe(_) | ValidationError::TerminalOnly(_) => {
+                ValidationError::UnknownAction(_) | ValidationError::TerminalOnly(_) => {
                     fdo::Error::AccessDenied(e.to_string())
                 }
                 _ => fdo::Error::InvalidArgs(e.to_string()),

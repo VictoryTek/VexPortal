@@ -1,15 +1,15 @@
 //! The form that replaces a recipe's terminal prompts.
 //!
-//! Every widget is built from the catalog's parameter list, so adding an argument to a
-//! recipe is a catalog edit rather than a new dialog.
+//! Every widget is built from the catalog's parameter list, so adding an argument to an
+//! action is a catalog edit rather than a new dialog.
 
 use crate::app::App;
-use crate::ui::{category_page, window::Window};
+use crate::ui::{actions, window::Window};
 
 use adw::prelude::*;
 use std::collections::HashMap;
 use std::rc::Rc;
-use vexportal_catalog::{Param, Recipe, Widget};
+use vexportal_catalog::{Action, Param, Widget};
 
 /// Reads one parameter's current value out of whichever widget backs it.
 enum Field {
@@ -42,13 +42,19 @@ impl Field {
     }
 }
 
-pub fn present(app: &Rc<App>, window: &Window, recipe: &Recipe) {
+/// Ask for the parameters `preset` does not already answer, then hand everything to
+/// [`actions::proceed`].
+pub fn present(app: &Rc<App>, window: &Window, action: &Action, preset: HashMap<String, String>) {
     let page = adw::PreferencesPage::new();
     let group = adw::PreferencesGroup::new();
-    group.set_description(Some(&recipe.blurb));
+    group.set_description(Some(&action.blurb));
 
     let mut fields: Vec<(String, Field)> = Vec::new();
-    for param in &recipe.params {
+    for param in action
+        .params
+        .iter()
+        .filter(|p| !preset.contains_key(&p.name))
+    {
         let (widget, field) = build_field(app, window, param);
         group.add(&widget);
         fields.push((param.name.clone(), field));
@@ -56,13 +62,13 @@ pub fn present(app: &Rc<App>, window: &Window, recipe: &Recipe) {
     page.add(&group);
 
     let dialog = adw::Dialog::builder()
-        .title(&recipe.title)
+        .title(&action.title)
         .content_width(520)
         .build();
 
     let header = adw::HeaderBar::new();
     let cancel = gtk::Button::with_label("Cancel");
-    let run = gtk::Button::with_label("Run");
+    let run = gtk::Button::with_label(if action.is_terminal() { "Open" } else { "Run" });
     run.add_css_class("suggested-action");
     header.pack_start(&cancel);
     header.pack_end(&run);
@@ -84,21 +90,22 @@ pub fn present(app: &Rc<App>, window: &Window, recipe: &Recipe) {
         let app = app.clone();
         let window = window.clone();
         let dialog = dialog.clone();
-        let recipe = recipe.name.clone();
+        let id = action.id.clone();
         let fields = fields.clone();
         move |_| {
-            let Some(recipe) = app.catalog.recipe(&recipe) else {
+            let Some(action) = app.catalog.action(&id) else {
                 return;
             };
-            let args: HashMap<String, String> = fields
+            let mut args: HashMap<String, String> = fields
                 .iter()
                 .map(|(name, field)| (name.clone(), field.value()))
                 .filter(|(_, value)| !value.is_empty())
                 .collect();
+            args.extend(preset.clone());
 
             // Check here rather than letting the daemon reject it: a missing required
             // field should point at the field, not come back as a D-Bus error.
-            if let Some(missing) = recipe
+            if let Some(missing) = action
                 .params
                 .iter()
                 .find(|p| p.required && !args.contains_key(&p.name))
@@ -113,7 +120,7 @@ pub fn present(app: &Rc<App>, window: &Window, recipe: &Recipe) {
             }
 
             dialog.close();
-            category_page::confirm_then_run(&app, &window, recipe, args);
+            actions::proceed(&app, &window, action, args);
         }
     });
 
