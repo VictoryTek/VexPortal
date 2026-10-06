@@ -136,6 +136,21 @@ pub fn is_installed() -> bool {
     glib::find_program_in_path(CLI).is_some()
 }
 
+/// Built into the running system but not the booted one. Its user services — crash
+/// notifications, usage warnings, theme sync — start with a graphical session, and
+/// VexOS logs in automatically, so a reboot is what starts them.
+pub fn needs_reboot() -> bool {
+    needs_reboot_in(
+        Path::new("/run/current-system"),
+        Path::new("/run/booted-system"),
+    )
+}
+
+fn needs_reboot_in(current: &Path, booted: &Path) -> bool {
+    let bin = Path::new("sw/bin").join(CLI);
+    current.join(&bin).exists() && !booted.join(&bin).exists()
+}
+
 fn xdg(var: &str, fallback: &str) -> PathBuf {
     match std::env::var_os(var) {
         Some(dir) if !dir.is_empty() => PathBuf::from(dir),
@@ -220,6 +235,22 @@ mod tests {
             assert_eq!(Agent::parse(agent.id()), Some(agent));
         }
         assert_eq!(Agent::parse("vim"), None);
+    }
+
+    #[test]
+    fn a_reboot_is_needed_only_between_install_and_boot() {
+        let root = std::env::temp_dir().join(format!("vexportal-ai-{}", std::process::id()));
+        let (current, booted) = (root.join("current"), root.join("booted"));
+        let install = |system: &Path| {
+            std::fs::create_dir_all(system.join("sw/bin")).unwrap();
+            std::fs::write(system.join("sw/bin").join(CLI), "").unwrap();
+        };
+        assert!(!needs_reboot_in(&current, &booted));
+        install(&current);
+        assert!(needs_reboot_in(&current, &booted));
+        install(&booted);
+        assert!(!needs_reboot_in(&current, &booted));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

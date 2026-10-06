@@ -21,6 +21,8 @@ use std::rc::Rc;
 pub const OVERVIEW: &str = "__overview";
 pub const ACTIVITY: &str = "__activity";
 
+pub use ai::offer_reboot as offer_ai_reboot;
+
 pub fn build(app: &Rc<App>, window: &Window, id: &str) -> adw::NavigationPage {
     match id {
         OVERVIEW => overview::build(app, window),

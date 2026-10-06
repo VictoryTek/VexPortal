@@ -3,8 +3,8 @@
 use crate::dbus_client::{Client, Event};
 use crate::job::{Job, Router};
 use crate::just::JustfileFacts;
-use crate::system::{SystemState, Variant};
-use crate::ui::window::Window;
+use crate::system::{ai, SystemState, Variant};
+use crate::ui::{pages, window::Window};
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -24,6 +24,9 @@ pub struct App {
     /// Every job started this session, oldest first.
     jobs: RefCell<Vec<Rc<Job>>>,
     next_request_id: Cell<u64>,
+    /// Whether the AI assistant was waiting for a reboot when last checked, so the
+    /// prompt comes once, when a rebuild installs it.
+    ai_reboot: Cell<bool>,
     pub window: RefCell<Option<Window>>,
 }
 
@@ -78,6 +81,13 @@ impl App {
         *self.state.borrow_mut() = SystemState::read();
     }
 
+    /// True once, when the AI assistant has just been built in and is waiting for a
+    /// reboot to start its services.
+    fn ai_reboot_became_needed(&self) -> bool {
+        let now = self.ai_enabled() && ai::needs_reboot();
+        !self.ai_reboot.replace(now) && now
+    }
+
     pub fn jobs(&self) -> Vec<Rc<Job>> {
         self.jobs.borrow().clone()
     }
@@ -88,7 +98,8 @@ impl App {
         let app = Rc::downgrade(self);
         job.connect_changed(move |job| {
             let Some(app) = app.upgrade() else { return };
-            if !job.state().is_active() {
+            let finished = !job.state().is_active();
+            if finished {
                 // A job that changed the variant, the generation, a feature or a
                 // service has just invalidated whatever page is showing.
                 app.refresh_state();
@@ -96,7 +107,10 @@ impl App {
             // Cloned out so the borrow ends before any page is rebuilt.
             let window = app.window.borrow().clone();
             if let Some(window) = window {
-                window.jobs_changed(!job.state().is_active());
+                window.jobs_changed(finished);
+                if finished && app.ai_reboot_became_needed() {
+                    pages::offer_ai_reboot(&app, &window);
+                }
             }
         });
         if let Some(window) = self.window.borrow().as_ref() {
@@ -175,6 +189,8 @@ pub fn build(application: &adw::Application) {
         router: RefCell::new(Router::default()),
         jobs: RefCell::new(Vec::new()),
         next_request_id: Cell::new(0),
+        // Already pending at startup is the AI page's row to show, not a prompt.
+        ai_reboot: Cell::new(ai::needs_reboot()),
         window: RefCell::new(None),
     });
 

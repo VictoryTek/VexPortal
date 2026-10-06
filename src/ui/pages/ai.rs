@@ -5,7 +5,7 @@
 
 use crate::app::App;
 use crate::system::ai::{self, Agent, AiState};
-use crate::ui::{self, actions, terminal_view, window::Window};
+use crate::ui::{self, actions, job_view, terminal_view, window::Window};
 
 use adw::prelude::*;
 use std::cell::Cell;
@@ -33,9 +33,11 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
         page.set_description(description);
     }
 
-    if !ai::is_installed() {
-        // Every action here would fail until the rebuild, so offer only that.
-        page.add(&not_installed(app, window));
+    // Until it is installed every action here would fail, and until a reboot its
+    // background services are not running, so offer only the next step.
+    let reboot = ai::needs_reboot();
+    if reboot || !ai::is_installed() {
+        page.add(&finish_installing(app, window, reboot));
         return ui::page(app, window, "AI Assistant", &page);
     }
 
@@ -69,29 +71,80 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     ui::page(app, window, "AI Assistant", &page)
 }
 
-fn not_installed(app: &Rc<App>, window: &Window) -> adw::PreferencesGroup {
+fn finish_installing(app: &Rc<App>, window: &Window, reboot: bool) -> adw::PreferencesGroup {
+    let (title, subtitle, icon, action, label) = if reboot {
+        (
+            "Reboot to finish installing",
+            "The AI Assistant is installed. Its crash notifications, usage warnings and \
+             theme sync start after a reboot.",
+            "system-reboot-symbolic",
+            "reboot",
+            "Reboot Now",
+        )
+    } else {
+        (
+            "Rebuild to finish installing",
+            "The AI Assistant is turned on, but it is installed by the next rebuild.",
+            "software-update-available-symbolic",
+            "rebuild",
+            "Rebuild Now",
+        )
+    };
     let group = adw::PreferencesGroup::new();
     let row = adw::ActionRow::builder()
-        .title("Rebuild to finish installing")
-        .subtitle("The AI Assistant is turned on, but it is installed by the next rebuild.")
+        .title(title)
+        .subtitle(subtitle)
         .build();
     row.set_subtitle_lines(0);
-    row.add_prefix(&gtk::Image::from_icon_name(
-        "software-update-available-symbolic",
-    ));
-    if app.visible("rebuild").is_some() {
-        let button = gtk::Button::with_label("Rebuild Now");
+    row.add_prefix(&gtk::Image::from_icon_name(icon));
+    if app.visible(action).is_some() {
+        let button = gtk::Button::with_label(label);
         button.set_valign(gtk::Align::Center);
         button.add_css_class("suggested-action");
         button.connect_clicked({
             let app = app.clone();
             let window = window.clone();
-            move |_| actions::activate(&app, &window, "rebuild", HashMap::new())
+            move |_| actions::activate(&app, &window, action, HashMap::new())
         });
         row.add_suffix(&button);
     }
     group.add(&row);
     group
+}
+
+/// Asked once, when a rebuild has just installed the assistant.
+pub fn offer_reboot(app: &Rc<App>, window: &Window) {
+    if app.visible("reboot").is_none() {
+        return;
+    }
+    let ask = adw::AlertDialog::new(
+        Some("Reboot to finish setting up the AI Assistant?"),
+        Some(
+            "The AI Assistant is installed. Its crash notifications, usage warnings and theme \
+             sync start after a reboot. Unsaved work in other applications is lost.",
+        ),
+    );
+    ask.add_response("later", "Later");
+    ask.add_response("reboot", "Reboot Now");
+    ask.set_response_appearance("reboot", adw::ResponseAppearance::Destructive);
+    ask.set_default_response(Some("later"));
+    ask.set_close_response("later");
+    ask.connect_response(None, {
+        let app = app.clone();
+        let window = window.clone();
+        move |_, response| {
+            if response != "reboot" {
+                return;
+            }
+            // This dialog already carries the reboot's warning; asking a second time
+            // through the catalog's confirm would add nothing.
+            if let Some(action) = app.catalog.action("reboot") {
+                let job = app.run(action, HashMap::new());
+                job_view::present(&app, &window, &job);
+            }
+        }
+    });
+    ask.present(Some(window.root()));
 }
 
 /// First run: no assistant chosen yet.
