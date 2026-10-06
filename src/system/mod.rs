@@ -6,6 +6,7 @@
 //! names the generation, comparing `/run/booted-system` with `/run/current-system`
 //! says whether a reboot is pending, and `vexos-vpn status --json` reports the VPN.
 
+pub mod ai;
 pub mod state;
 pub mod variant;
 pub mod vpn;

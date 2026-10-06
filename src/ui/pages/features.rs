@@ -18,21 +18,7 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
         page.add(&switches(app, window));
     }
 
-    let ai_enabled = {
-        let state = app.state.borrow();
-        let default_on = app
-            .catalog
-            .features
-            .iter()
-            .find(|f| f.name == "ai")
-            .is_some_and(|f| f.default_on);
-        state.settings.feature("ai", default_on).0
-    };
     for group in ui::action_groups(app, window, "features", &SWITCHED) {
-        // The assistant's actions only work once the feature is built in.
-        if group.title() == "AI Assistant" && !ai_enabled {
-            continue;
-        }
         page.add(&group);
     }
 

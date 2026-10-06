@@ -365,6 +365,82 @@
    "parameters": [],
    "private": false
   },
+  "ai-account-add": {
+   "doc": "Sign in an extra Claude account: just ai-account-add <label>",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "label"
+    }
+   ],
+   "private": false
+  },
+  "ai-account-mode": {
+   "doc": "Warn only, or also switch, near a limit: just ai-account-mode <manual|auto> [pct]",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "mode"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "pct"
+    }
+   ],
+   "private": false
+  },
+  "ai-account-remove": {
+   "doc": "Remove an extra Claude account: just ai-account-remove <label>",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "label"
+    }
+   ],
+   "private": false
+  },
+  "ai-account-use": {
+   "doc": "Account for new Claude sessions: just ai-account-use <label|next>",
+   "parameters": [
+    {
+     "default": null,
+     "kind": "singular",
+     "name": "target"
+    }
+   ],
+   "private": false
+  },
+  "ai-crash-mute": {
+   "doc": "Mute, unmute or list crash notifications: just ai-crash-mute [name] [off]",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "name"
+    },
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "state"
+    }
+   ],
+   "private": false
+  },
+  "ai-pick": {
+   "doc": "Choose your AI assistant: just ai-pick [claude|opencode]",
+   "parameters": [
+    {
+     "default": "",
+     "kind": "singular",
+     "name": "agent"
+    }
+   ],
+   "private": false
+  },
   "backup-now": {
    "doc": "Requires vexos.server.backup.enable = true.",
    "parameters": [],

@@ -34,6 +34,12 @@
 # ─────────────────────────────── Pages ───────────────────────────────
 
 [[page]]
+id = "ai"
+title = "AI Assistant"
+icon = "user-available-symbolic"
+description = "Claude Code or OpenCode, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
+
+[[page]]
 id = "system"
 title = "System"
 icon = "emblem-system-symbolic"
@@ -119,6 +125,186 @@ description = "Boot a custom kernel from the VexOS kernel registry."
 name = "ai"
 title = "AI Assistant"
 description = "Claude Code or OpenCode, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
+
+# ─────────────────────────────── AI Assistant ───────────────────────────────
+#
+# The page is shown only while `ai` is on in features.nix. Everything here acts on the
+# logged-in user's own files under ~/.config, ~/.local/share and ~/.cache, so every
+# action runs in the terminal as the user: the daemon's HOME is /root.
+
+[[action]]
+id = "agent"
+command = ["agent"]
+implements = "agent"
+title = "Open AI Assistant"
+blurb = "Start Claude Code or OpenCode in /etc/nixos to change or troubleshoot this machine."
+icon = "user-available-symbolic"
+page = "ai"
+group = "Assistant"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "The assistant is a full-screen terminal program that runs as you."
+
+[[action]]
+id = "diagnose"
+command = ["diagnose"]
+implements = "diagnose"
+title = "Diagnose a Problem"
+blurb = "Have the AI assistant explain failed units and this boot's errors, one service, or a failed rebuild. Read-only."
+icon = "dialog-question-symbolic"
+page = "ai"
+group = "Assistant"
+roles = ["desktop", "htpc", "server"]
+risk = "safe"
+mode = "terminal"
+mode_reason = "The assistant answers in an interactive terminal session that runs as you."
+
+  [[action.params]]
+  name = "target"
+  label = "What to look at"
+  help = "Leave empty for failed units and this boot's errors; enter a unit name, or `rebuild` to reproduce a failed rebuild."
+  widget = "text"
+  format = "slug"
+
+[[action]]
+id = "ai-pick"
+command = ["ai-pick"]
+implements = "ai-pick"
+title = "Choose AI Assistant"
+blurb = "Use Claude Code or OpenCode as your assistant."
+icon = "user-available-symbolic"
+page = "ai"
+group = "Assistant"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "The choice is saved in your own settings."
+
+  [[action.params]]
+  name = "agent"
+  label = "Assistant"
+  required = true
+  widget = "choice"
+  choices = ["claude", "opencode"]
+
+[[action]]
+id = "ai-account-add"
+command = ["ai-account-add"]
+implements = "ai-account-add"
+title = "Add Claude Account"
+blurb = "Sign in an extra Claude account in your browser, to switch to when one reaches its limit."
+icon = "list-add-symbolic"
+page = "ai"
+group = "Claude Accounts"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "Signing in opens your browser and finishes in the terminal, as you."
+
+  [[action.params]]
+  name = "label"
+  label = "Account name"
+  help = "A short name such as `work`: 1–32 letters, digits, - or _."
+  required = true
+  widget = "text"
+  format = "account-label"
+
+[[action]]
+id = "ai-account-use"
+command = ["ai-account-use"]
+implements = "ai-account-use"
+title = "Use Claude Account"
+blurb = "New Claude Code sessions use this account. Running sessions keep theirs."
+icon = "object-select-symbolic"
+page = "ai"
+group = "Claude Accounts"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "The active account is saved in your own settings."
+
+  [[action.params]]
+  name = "target"
+  label = "Account"
+  required = true
+  widget = "text"
+  format = "account-ref"
+
+[[action]]
+id = "ai-account-remove"
+command = ["ai-account-remove"]
+implements = "ai-account-remove"
+title = "Remove Claude Account"
+blurb = "Delete an extra Claude account's sign-in from this machine."
+icon = "user-trash-symbolic"
+page = "ai"
+group = "Claude Accounts"
+roles = ["desktop", "htpc", "server"]
+risk = "destructive"
+confirm = "Its sign-in is deleted from this machine. You can add it again later by signing in."
+mode = "terminal"
+mode_reason = "The account's sign-in lives in your own home directory."
+
+  [[action.params]]
+  name = "label"
+  label = "Account name"
+  required = true
+  widget = "text"
+  format = "account-label"
+
+[[action]]
+id = "ai-account-mode"
+command = ["ai-account-mode"]
+implements = "ai-account-mode"
+title = "Account Switching"
+blurb = "Near the threshold, warn only, or also move new sessions to the account with the most headroom."
+icon = "media-playlist-shuffle-symbolic"
+page = "ai"
+group = "Claude Accounts"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "The setting is saved in your own settings."
+
+  [[action.params]]
+  name = "mode"
+  label = "When an account nears its limit"
+  required = true
+  widget = "choice"
+  choices = ["manual", "auto"]
+
+  [[action.params]]
+  name = "pct"
+  label = "Threshold (%)"
+  widget = "text"
+  format = "percent"
+
+[[action]]
+id = "ai-crash-mute"
+command = ["ai-crash-mute"]
+implements = "ai-crash-mute"
+title = "Crash Notifications"
+blurb = "Mute or unmute \"Diagnose with AI\" notifications for one program."
+icon = "dialog-error-symbolic"
+page = "ai"
+group = "Crash Notifications"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+mode = "terminal"
+mode_reason = "Mutes are saved in your own settings."
+
+  [[action.params]]
+  name = "name"
+  label = "Program"
+  widget = "text"
+  format = "program-name"
+
+  [[action.params]]
+  name = "state"
+  label = "Notifications"
+  widget = "choice"
+  choices = ["off"]
 
 # ─────────────────────────────── System ───────────────────────────────
 
@@ -422,41 +608,6 @@ page = "features"
 group = "Advanced"
 roles = ["desktop", "htpc", "server", "vanilla"]
 risk = "medium"
-
-[[action]]
-id = "agent"
-command = ["agent"]
-implements = "agent"
-title = "Open AI Assistant"
-blurb = "Start Claude Code or OpenCode in /etc/nixos to change or troubleshoot this machine."
-icon = "user-available-symbolic"
-page = "features"
-group = "AI Assistant"
-roles = ["desktop", "htpc", "server"]
-risk = "medium"
-mode = "terminal"
-mode_reason = "The assistant is a full-screen terminal program that runs as you."
-
-[[action]]
-id = "diagnose"
-command = ["diagnose"]
-implements = "diagnose"
-title = "Diagnose a Problem"
-blurb = "Have the AI assistant explain failed units and this boot's errors, one service, or a failed rebuild. Read-only."
-icon = "dialog-question-symbolic"
-page = "features"
-group = "AI Assistant"
-roles = ["desktop", "htpc", "server"]
-risk = "safe"
-mode = "terminal"
-mode_reason = "The assistant answers in an interactive terminal session that runs as you."
-
-  [[action.params]]
-  name = "target"
-  label = "What to look at"
-  help = "Leave empty for failed units and this boot's errors; enter a unit name, or `rebuild` to reproduce a failed rebuild."
-  widget = "text"
-  format = "slug"
 
 # ─────────────────────────────── VPN & Network ───────────────────────────────
 # The VPN actions wrap the vexos-vpn CLI, installed by the `vpn` feature (desktop,

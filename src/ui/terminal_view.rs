@@ -16,13 +16,19 @@ use vexportal_catalog::validate::{build_for_terminal, Invocation};
 use vexportal_catalog::Action;
 use vte4::prelude::*;
 
-pub fn open(app: &Rc<App>, window: &Window, action: &Action, args: HashMap<String, String>) {
+/// The job, when the action passed validation, so a caller can follow it.
+pub fn open(
+    app: &Rc<App>,
+    window: &Window,
+    action: &Action,
+    args: HashMap<String, String>,
+) -> Option<Rc<Job>> {
     let answers: BTreeMap<String, String> = args.into_iter().collect();
     let invocation = match build_for_terminal(&app.catalog, &action.id, &answers) {
         Ok(invocation) => invocation,
         Err(e) => {
             window.alert("Cannot start this", &e.to_string());
-            return;
+            return None;
         }
     };
 
@@ -156,6 +162,7 @@ pub fn open(app: &Rc<App>, window: &Window, action: &Action, args: HashMap<Strin
     dialog.present(Some(window.root()));
     spawn(window, &term, &dialog, &job, &invocation);
     term.grab_focus();
+    Some(job)
 }
 
 fn spawn(

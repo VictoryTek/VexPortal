@@ -51,13 +51,27 @@ impl App {
             .collect()
     }
 
-    /// Sidebar entries: pages with at least one visible action.
+    /// Sidebar entries: pages with at least one visible action. The AI Assistant page
+    /// also needs the `ai` feature on in features.nix: its actions only work once the
+    /// feature is built in.
     pub fn visible_pages(&self) -> Vec<&Page> {
         self.catalog
             .pages
             .iter()
+            .filter(|p| p.id != "ai" || self.ai_enabled())
             .filter(|p| !self.visible_on(&p.id).is_empty())
             .collect()
+    }
+
+    /// Whether `ai` is on in features.nix, explicitly or by the module default.
+    pub fn ai_enabled(&self) -> bool {
+        let default_on = self
+            .catalog
+            .features
+            .iter()
+            .find(|f| f.name == "ai")
+            .is_some_and(|f| f.default_on);
+        self.state.borrow().settings.feature("ai", default_on).0
     }
 
     pub fn refresh_state(&self) {

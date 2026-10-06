@@ -131,6 +131,14 @@ pub enum Format {
     NixosVersion,
     /// A flake reference — a path or `github:owner/repo` style URL.
     FlakeRef,
+    /// A new extra Claude account: 1–32 letters, digits, `-` or `_`, and not `main`.
+    AccountLabel,
+    /// An existing Claude account to switch to: a label, `main`, or `next`.
+    AccountRef,
+    /// A whole percentage, 1–100.
+    Percent,
+    /// A program's file name, as crash notifications are keyed: no `/`, no leading `.`.
+    ProgramName,
 }
 
 /// How the GUI renders a parameter, and what the daemon will accept for it.

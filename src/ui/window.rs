@@ -14,7 +14,9 @@ pub struct Window {
     toasts: adw::ToastOverlay,
     sidebar: gtk::ListBox,
     /// Sidebar row order, as page ids.
-    ids: Rc<Vec<String>>,
+    ids: Rc<RefCell<Vec<String>>>,
+    /// Set while the sidebar is repopulated, so its selection changes are not clicks.
+    syncing: Rc<Cell<bool>>,
     activity_spinner: adw::Spinner,
     app: Rc<App>,
     /// The page currently shown, so a state change can rebuild it in place.
@@ -40,29 +42,16 @@ impl Window {
         let activity_spinner = adw::Spinner::new();
         activity_spinner.set_visible(false);
 
-        // Overview first, then only the pages that have something to show for this
-        // role — a desktop has no reason to display an empty Services page, and
-        // hiding it is clearer than showing it disabled — then Activity.
-        let mut entries: Vec<(String, String, String)> = vec![(
-            pages::OVERVIEW.to_string(),
-            "Overview".to_string(),
-            "go-home-symbolic".to_string(),
-        )];
-        for page in app.visible_pages() {
-            entries.push((page.id.clone(), page.title.clone(), page.icon.clone()));
-        }
-        entries.push((
-            pages::ACTIVITY.to_string(),
-            "Activity".to_string(),
-            "view-list-bullet-symbolic".to_string(),
-        ));
-
+        let entries = sidebar_entries(app);
         let this = Window {
             window: window.clone(),
             navigation: navigation.clone(),
             toasts: toasts.clone(),
             sidebar: sidebar.clone(),
-            ids: Rc::new(entries.iter().map(|(id, _, _)| id.clone()).collect()),
+            ids: Rc::new(RefCell::new(
+                entries.iter().map(|(id, _, _)| id.clone()).collect(),
+            )),
+            syncing: Rc::new(Cell::new(false)),
             activity_spinner: activity_spinner.clone(),
             app: app.clone(),
             current: Rc::new(RefCell::new(pages::OVERVIEW.to_string())),
@@ -103,26 +92,21 @@ impl Window {
         let list = &self.sidebar;
         list.add_css_class("navigation-sidebar");
         list.set_selection_mode(gtk::SelectionMode::Single);
-
-        for (id, title, icon) in entries {
-            let row = sidebar_row(title, icon);
-            if id == pages::ACTIVITY {
-                if let Some(box_) = row.child().and_downcast::<gtk::Box>() {
-                    box_.append(&self.activity_spinner);
-                }
-            }
-            list.append(&row);
-        }
+        self.append_rows(entries);
 
         list.connect_row_selected({
             let this = self.clone();
             move |_, row| {
                 let Some(row) = row else { return };
-                if let Some(id) = this.ids.get(row.index() as usize) {
-                    if *this.current.borrow() != *id
+                if this.syncing.get() {
+                    return;
+                }
+                let id = this.ids.borrow().get(row.index() as usize).cloned();
+                if let Some(id) = id {
+                    if *this.current.borrow() != id
                         || this.navigation.navigation_stack().n_items() > 1
                     {
-                        this.show(id);
+                        this.show(&id);
                     }
                 }
             }
@@ -147,10 +131,52 @@ impl Window {
             .build()
     }
 
+    fn append_rows(&self, entries: &[(String, String, String)]) {
+        for (id, title, icon) in entries {
+            let row = sidebar_row(title, icon);
+            if id == pages::ACTIVITY {
+                if let Some(box_) = row.child().and_downcast::<gtk::Box>() {
+                    if let Some(old) = self.activity_spinner.parent().and_downcast::<gtk::Box>() {
+                        old.remove(&self.activity_spinner);
+                    }
+                    box_.append(&self.activity_spinner);
+                }
+            }
+            self.sidebar.append(&row);
+        }
+    }
+
+    /// Bring the sidebar in line with the pages that now have something to show — the
+    /// AI Assistant appears once `ai` is turned on. If the page on screen is gone, fall
+    /// back to the Overview.
+    fn refresh_sidebar(&self) {
+        let entries = sidebar_entries(&self.app);
+        let ids: Vec<String> = entries.iter().map(|(id, _, _)| id.clone()).collect();
+        if *self.ids.borrow() == ids {
+            return;
+        }
+        if !ids.contains(&self.current.borrow()) {
+            *self.current.borrow_mut() = pages::OVERVIEW.to_string();
+        }
+        let index = ids.iter().position(|id| *id == *self.current.borrow());
+        *self.ids.borrow_mut() = ids;
+
+        self.syncing.set(true);
+        while let Some(row) = self.sidebar.row_at_index(0) {
+            self.sidebar.remove(&row);
+        }
+        self.append_rows(&entries);
+        if let Some(row) = index.and_then(|i| self.sidebar.row_at_index(i as i32)) {
+            self.sidebar.select_row(Some(&row));
+        }
+        self.syncing.set(false);
+    }
+
     /// Show a page by id, and select it in the sidebar.
     pub fn show(&self, id: &str) {
         *self.current.borrow_mut() = id.to_string();
-        if let Some(index) = self.ids.iter().position(|i| i == id) {
+        let index = self.ids.borrow().iter().position(|i| i == id);
+        if let Some(index) = index {
             let selected = self.sidebar.selected_row().map(|r| r.index());
             if selected != Some(index as i32) {
                 if let Some(row) = self.sidebar.row_at_index(index as i32) {
@@ -164,6 +190,7 @@ impl Window {
     }
 
     fn rebuild_current(&self) {
+        self.refresh_sidebar();
         let id = self.current.borrow().clone();
         let page = pages::build(&self.app, self, &id);
         // `replace` rather than `push`: choosing a page in the sidebar is a sideways
@@ -218,6 +245,26 @@ impl Window {
     pub fn root(&self) -> &adw::ApplicationWindow {
         &self.window
     }
+}
+
+/// Overview first, then only the pages that have something to show for this role — a
+/// desktop has no reason to display an empty Services page, and hiding it is clearer
+/// than showing it disabled — then Activity.
+fn sidebar_entries(app: &App) -> Vec<(String, String, String)> {
+    let mut entries: Vec<(String, String, String)> = vec![(
+        pages::OVERVIEW.to_string(),
+        "Overview".to_string(),
+        "go-home-symbolic".to_string(),
+    )];
+    for page in app.visible_pages() {
+        entries.push((page.id.clone(), page.title.clone(), page.icon.clone()));
+    }
+    entries.push((
+        pages::ACTIVITY.to_string(),
+        "Activity".to_string(),
+        "view-list-bullet-symbolic".to_string(),
+    ));
+    entries
 }
 
 fn sidebar_row(title: &str, icon: &str) -> gtk::ListBoxRow {

@@ -33,6 +33,10 @@ impl Format {
             Format::AbsPath => "an absolute path",
             Format::NixosVersion => "a NixOS release such as `26.05`",
             Format::FlakeRef => "a path or flake reference such as `.` or `github:owner/repo`",
+            Format::AccountLabel => "1–32 letters, digits, - or _ (not `main`)",
+            Format::AccountRef => "an account name, `main` or `next`",
+            Format::Percent => "a whole number from 1 to 100",
+            Format::ProgramName => "a program name such as `firefox`",
         }
     }
 
@@ -54,6 +58,10 @@ impl Format {
             Format::AbsPath => is_abs_path(value),
             Format::NixosVersion => is_nixos_version(value),
             Format::FlakeRef => is_flake_ref(value),
+            Format::AccountLabel => is_account_ref(value) && value != "main",
+            Format::AccountRef => is_account_ref(value),
+            Format::Percent => value.parse::<u8>().is_ok_and(|p| (1..=100).contains(&p)),
+            Format::ProgramName => is_program_name(value),
         };
 
         if ok {
@@ -135,6 +143,20 @@ fn is_flake_ref(v: &str) -> bool {
         })
 }
 
+/// vexos-ai's `valid_label` charset; `main` and `next` pass, which is what `use` takes.
+fn is_account_ref(v: &str) -> bool {
+    v.len() <= 32
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+}
+
+fn is_program_name(v: &str) -> bool {
+    v.len() <= 255
+        && !v.starts_with('.')
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,6 +191,10 @@ mod tests {
                 Format::AbsPath,
                 Format::NixosVersion,
                 Format::FlakeRef,
+                Format::AccountLabel,
+                Format::AccountRef,
+                Format::Percent,
+                Format::ProgramName,
             ] {
                 assert!(
                     format.validate(probe).is_err(),
@@ -224,5 +250,37 @@ mod tests {
             .validate("github:VictoryTek/vexos-nix")
             .is_ok());
         assert!(Format::FlakeRef.validate("rm -rf /").is_err());
+    }
+
+    #[test]
+    fn account_labels() {
+        assert!(Format::AccountLabel.validate("work").is_ok());
+        assert!(Format::AccountLabel.validate("Work_2-b").is_ok());
+        assert!(Format::AccountLabel.validate(&"a".repeat(32)).is_ok());
+        assert!(Format::AccountLabel.validate(&"a".repeat(33)).is_err());
+        assert!(Format::AccountLabel.validate("main").is_err());
+        assert!(Format::AccountLabel.validate("my work").is_err());
+        assert!(Format::AccountRef.validate("main").is_ok());
+        assert!(Format::AccountRef.validate("next").is_ok());
+        assert!(Format::AccountRef.validate("a.b").is_err());
+    }
+
+    #[test]
+    fn percentages() {
+        assert!(Format::Percent.validate("1").is_ok());
+        assert!(Format::Percent.validate("100").is_ok());
+        assert!(Format::Percent.validate("0").is_err());
+        assert!(Format::Percent.validate("101").is_err());
+        assert!(Format::Percent.validate("9.5").is_err());
+    }
+
+    #[test]
+    fn program_names() {
+        assert!(Format::ProgramName.validate("firefox").is_ok());
+        assert!(Format::ProgramName.validate("Xwayland").is_ok());
+        assert!(Format::ProgramName.validate("gnome-shell").is_ok());
+        assert!(Format::ProgramName.validate(".").is_err());
+        assert!(Format::ProgramName.validate("..").is_err());
+        assert!(Format::ProgramName.validate("a/b").is_err());
     }
 }

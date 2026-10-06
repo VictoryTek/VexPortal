@@ -1,9 +1,10 @@
 //! One module per sidebar page.
 //!
-//! Features, VPN & Network and Services show the system's state with controls on it;
+//! AI Assistant, Features, VPN & Network and Services show the system's state with controls on it;
 //! the rest list their actions under the catalog's group headings.
 
 mod activity;
+mod ai;
 mod features;
 mod network;
 mod overview;
@@ -24,6 +25,9 @@ pub fn build(app: &Rc<App>, window: &Window, id: &str) -> adw::NavigationPage {
     match id {
         OVERVIEW => overview::build(app, window),
         ACTIVITY => activity::build(app, window),
+        // Off in features.nix, the page does not exist: no route may reach it.
+        "ai" if app.ai_enabled() => ai::build(app, window),
+        "ai" => overview::build(app, window),
         "system" => system::build(app, window),
         "features" => features::build(app, window),
         "network" => network::build(app, window),
