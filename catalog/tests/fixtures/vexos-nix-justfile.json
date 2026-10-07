@@ -1,5 +1,8 @@
 {
  "assignments": {
+  "SYSTEMD_PAGER": {
+   "value": ""
+  },
   "_feature_names": {
    "value": "gaming development print3d virtualization sunshine vpn kernel ai"
   },

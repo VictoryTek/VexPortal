@@ -139,6 +139,7 @@ pub fn open(
     });
 
     term.connect_child_exited({
+        let action_id = action.id.clone();
         let job = Rc::downgrade(&job);
         let status = status.downgrade();
         let close = close.downgrade();
@@ -150,6 +151,8 @@ pub fn open(
             if let (Some(status), Some(close)) = (status.upgrade(), close.upgrade()) {
                 status.set_text(&if code == 0 {
                     "Finished.".to_string()
+                } else if let Some(message) = terminal::ai_exit_message(&action_id, code) {
+                    format!("{message} (exit code {code})")
                 } else {
                     format!("Stopped with exit code {code}. The output above says why.")
                 });
@@ -177,7 +180,7 @@ fn spawn(
     // Added to the user's own environment, not replacing it: the recipe needs the
     // session's PATH, HOME and SSH agent. VEXOS_ASSUME_YES is deliberately absent —
     // a person is here to answer.
-    let envv = ["VEXPORTAL=1"];
+    let envv = terminal::environment(invocation);
 
     let fallback = {
         let window = window.clone();

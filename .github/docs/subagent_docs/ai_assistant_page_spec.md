@@ -8,7 +8,7 @@
 - The sidebar is built once in `Window::new` from `App::visible_pages()`; `ids` is a
   fixed `Rc<Vec<String>>`. A finished job calls `App::refresh_state` and
   `Window::state_changed`, which rebuilds only the visible page, not the sidebar.
-- `vexos-ai` (vexos-nix `pkgs/vexos-ai/vexos-ai.sh`) keeps its state in user files:
+- `vexos-ai` (github:VictoryTek/vexos-ai, `bin/vexos-ai.sh`) keeps its state in user files:
   - `~/.config/vexos/ai/agent`: `claude` | `opencode` (first line)
   - `~/.config/vexos/ai/claude-account`: active label; `main` when it is absent or names no account dir
   - `~/.config/vexos/ai/mode`: `auto`, otherwise manual

@@ -1,6 +1,6 @@
 //! The AI assistant: setup, Claude accounts and usage, and crash-notification mutes.
 //!
-//! The state is the user's own `vexos-ai` files, read directly; every change goes
+//! The state comes from `vexos-ai status --json`; every change goes
 //! through a `just ai-*` recipe in the terminal, as the user.
 
 use crate::app::App;
@@ -319,12 +319,7 @@ fn accounts(app: &Rc<App>, window: &Window, state: &AiState) -> Option<adw::Pref
     for account in &state.accounts {
         let row = adw::ActionRow::builder()
             .title(&account.label)
-            .subtitle(
-                account
-                    .usage
-                    .as_ref()
-                    .map_or("No usage reading yet".to_string(), |u| u.summary()),
-            )
+            .subtitle(account.subtitle())
             .use_markup(false)
             .build();
         row.set_subtitle_lines(0);
