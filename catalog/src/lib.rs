@@ -1,10 +1,10 @@
 //! The VexPortal recipe catalog.
 //!
 //! `just` can describe the vexos-nix justfile itself (`just --dump --dump-format json`),
-//! but not well enough to drive a GUI: it keeps only the *last* comment line as a
-//! recipe's doc (so `backup-plex` documents itself as "suitable for moving to a new
-//! server"), it has no notion of which role a recipe applies to, and it cannot say
-//! whether a recipe is safe to run or will repartition a disk.
+//! but not well enough to drive a GUI: a recipe's `[doc]` is a one-line terminal hint
+//! (`zfs-pool` is "ZFS pools: create, import, replace disks, scrub (menu)"), not a title
+//! and description per action, it has no notion of which role a recipe applies to, and
+//! it cannot say whether a recipe is safe to run or will repartition a disk.
 //!
 //! This crate carries that metadata as a curated TOML document compiled into both the
 //! GUI and the daemon, plus the validation that turns a set of user-supplied answers

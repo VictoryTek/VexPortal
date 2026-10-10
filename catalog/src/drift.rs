@@ -21,7 +21,9 @@ pub struct JustDump {
 
 #[derive(Debug, Deserialize)]
 pub struct JustAssignment {
-    pub value: String,
+    /// A string for a literal assignment; an expression such as
+    /// `just_executable() + " --justfile " + justfile()` dumps as a JSON syntax tree.
+    pub value: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,18 +81,22 @@ impl JustDump {
     pub fn list_variable(&self, name: &str) -> Vec<String> {
         self.assignments
             .get(name)
-            .map(|a| a.value.split_whitespace().map(str::to_string).collect())
+            .and_then(|a| a.value.as_str())
+            .map(|value| value.split_whitespace().map(str::to_string).collect())
             .unwrap_or_default()
     }
 
     /// The `_service_catalog` variable: every server service module, grouped and
     /// described, in the justfile's order.
     pub fn service_catalog(&self) -> Vec<ServiceEntry> {
-        let Some(assignment) = self.assignments.get("_service_catalog") else {
+        let Some(value) = self
+            .assignments
+            .get("_service_catalog")
+            .and_then(|a| a.value.as_str())
+        else {
             return Vec::new();
         };
-        assignment
-            .value
+        value
             .lines()
             .filter_map(|line| {
                 let mut fields = line.trim().splitn(3, '|');
@@ -268,7 +274,8 @@ mod tests {
 
     const DUMP: &str = r#"{
         "assignments": {
-            "_feature_names": { "value": "gaming development print3d" }
+            "_feature_names": { "value": "gaming development print3d" },
+            "_just": { "value": ["concatenate", ["call", "just_executable"], " --justfile "] }
         },
         "recipes": {
             "rebuild":  { "private": false, "doc": "Rebuild.", "parameters": [] },
@@ -290,6 +297,7 @@ mod tests {
             ["gaming", "development", "print3d"]
         );
         assert!(dump.list_variable("_nonexistent").is_empty());
+        assert!(dump.list_variable("_just").is_empty());
     }
 
     #[test]
