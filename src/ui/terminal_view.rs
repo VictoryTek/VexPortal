@@ -6,7 +6,7 @@
 
 use crate::app::App;
 use crate::job::{Job, JobState};
-use crate::terminal;
+use crate::terminal::{self, ClipboardKey};
 use crate::ui::window::Window;
 
 use adw::prelude::*;
@@ -15,6 +15,12 @@ use std::rc::Rc;
 use vexportal_catalog::validate::{build_for_terminal, Invocation};
 use vexportal_catalog::Action;
 use vte4::prelude::*;
+
+// PCRE2 compile flags, from pcre2.h; VTE requires MULTILINE on a match regex.
+const PCRE2_CASELESS: u32 = 0x0000_0008;
+const PCRE2_MULTILINE: u32 = 0x0000_0400;
+const PCRE2_UCP: u32 = 0x0002_0000;
+const PCRE2_UTF: u32 = 0x0008_0000;
 
 /// The job, when the action passed validation, so a caller can follow it.
 pub fn open(
@@ -42,9 +48,12 @@ pub fn open(
     term.set_scrollback_lines(10_000);
     term.set_scroll_on_output(true);
     term.add_css_class("vex-terminal");
+    add_clipboard(&term);
+    add_links(&term, window);
 
     let status = gtk::Label::new(Some(
-        "Answer any questions in the terminal. Administrator steps ask for your password here.",
+        "Answer any questions in the terminal. Administrator steps ask for your password here. \
+         Paste with Ctrl+Shift+V. Ctrl+click a link to open it.",
     ));
     status.set_xalign(0.0);
     status.set_hexpand(true);
@@ -166,6 +175,140 @@ pub fn open(
     spawn(window, &term, &dialog, &job, &invocation);
     term.grab_focus();
     Some(job)
+}
+
+/// Copy and paste, from the keyboard and a right-click menu. VTE leaves both to the
+/// host, and without paste a sign-in code or a password manager's entry cannot be given.
+fn add_clipboard(term: &vte4::Terminal) {
+    // Capture phase, so VTE never turns the shortcuts into control characters.
+    let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    keys.connect_key_pressed({
+        let term = term.downgrade();
+        move |_, key, _, state| {
+            let Some(term) = term.upgrade() else {
+                return glib::Propagation::Proceed;
+            };
+            match terminal::clipboard_key(key, state) {
+                // Swallowed even with nothing selected: passed on, it would be a ^C.
+                Some(ClipboardKey::Copy) => {
+                    if term.has_selection() {
+                        term.copy_clipboard_format(vte4::Format::Text);
+                    }
+                    glib::Propagation::Stop
+                }
+                Some(ClipboardKey::Paste) => {
+                    term.paste_clipboard();
+                    glib::Propagation::Stop
+                }
+                None => glib::Propagation::Proceed,
+            }
+        }
+    });
+    term.add_controller(keys);
+
+    let copy = gio::SimpleAction::new("copy", None);
+    copy.set_enabled(false);
+    copy.connect_activate({
+        let term = term.downgrade();
+        move |_, _| {
+            if let Some(term) = term.upgrade() {
+                term.copy_clipboard_format(vte4::Format::Text);
+            }
+        }
+    });
+    term.connect_selection_changed({
+        let copy = copy.downgrade();
+        move |term| {
+            if let Some(copy) = copy.upgrade() {
+                copy.set_enabled(term.has_selection());
+            }
+        }
+    });
+    let paste = gio::SimpleAction::new("paste", None);
+    paste.connect_activate({
+        let term = term.downgrade();
+        move |_, _| {
+            if let Some(term) = term.upgrade() {
+                term.paste_clipboard();
+            }
+        }
+    });
+    let select_all = gio::SimpleAction::new("select-all", None);
+    select_all.connect_activate({
+        let term = term.downgrade();
+        move |_, _| {
+            if let Some(term) = term.upgrade() {
+                term.select_all();
+            }
+        }
+    });
+    let actions = gio::SimpleActionGroup::new();
+    actions.add_action(&copy);
+    actions.add_action(&paste);
+    actions.add_action(&select_all);
+    term.insert_action_group("term", Some(&actions));
+
+    let clipboard = gio::Menu::new();
+    clipboard.append(Some("Copy"), Some("term.copy"));
+    clipboard.append(Some("Paste"), Some("term.paste"));
+    let menu = gio::Menu::new();
+    menu.append_section(None, &clipboard);
+    menu.append(Some("Select All"), Some("term.select-all"));
+    // VTE shows it on right-click and the Menu key, and owns the popover.
+    term.set_context_menu_model(Some(&menu));
+}
+
+/// Web addresses open in the browser on Ctrl+click: OSC 8 hyperlinks, and any URL in
+/// the text. A fallback for programs that cannot open the browser themselves.
+fn add_links(term: &vte4::Terminal, window: &Window) {
+    term.set_allow_hyperlink(true);
+    let flags = PCRE2_MULTILINE | PCRE2_UTF | PCRE2_UCP | PCRE2_CASELESS;
+    match vte4::Regex::for_match(terminal::URL_PATTERN, flags) {
+        Ok(regex) => {
+            let tag = term.match_add_regex(&regex, 0);
+            term.match_set_cursor_name(tag, "pointer");
+        }
+        Err(e) => log::warn!("URL pattern rejected by VTE: {e}"),
+    }
+
+    // Ctrl+click rather than a plain click, so a link can still be drag-selected and
+    // copied; capture phase, so VTE does not start a selection first.
+    let click = gtk::GestureClick::new();
+    click.set_button(gtk::gdk::BUTTON_PRIMARY);
+    click.set_propagation_phase(gtk::PropagationPhase::Capture);
+    click.connect_pressed({
+        let term = term.downgrade();
+        let window = window.clone();
+        move |gesture, _, x, y| {
+            if !gesture
+                .current_event_state()
+                .contains(gtk::gdk::ModifierType::CONTROL_MASK)
+            {
+                return;
+            }
+            let Some(term) = term.upgrade() else { return };
+            let uri = term
+                .check_hyperlink_at(x, y)
+                .or_else(|| term.check_match_at(x, y).0);
+            let Some(uri) = uri.as_deref().and_then(terminal::link_to_open) else {
+                return;
+            };
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            let toast = window.clone();
+            gtk::UriLauncher::new(uri).launch(
+                Some(window.root()),
+                gio::Cancellable::NONE,
+                move |result| {
+                    if let Err(e) = result {
+                        log::warn!("could not open a link from the terminal: {e}");
+                        toast.toast("Could not open the link");
+                    }
+                },
+            );
+        }
+    });
+    term.add_controller(click);
 }
 
 fn spawn(

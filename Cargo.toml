@@ -43,7 +43,8 @@ zbus.workspace = true
 tokio.workspace = true
 gtk = { version = "0.9", package = "gtk4", features = ["v4_12"] }
 adw = { version = "0.7", package = "libadwaita", features = ["v1_6"] }
-vte4 = "0.8"
+# v0_76: the context-menu model; it implies v0_70, for finding the link under a click.
+vte4 = { version = "0.8", features = ["v0_76"] }
 glib = "0.20"
 gio = "0.20"
 async-channel = "2"

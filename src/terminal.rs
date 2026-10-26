@@ -7,6 +7,7 @@
 //! directly: nothing here is ever handed to a shell.
 
 use crate::just::JUSTFILE;
+use gtk::gdk;
 use vexportal_catalog::validate::Invocation;
 
 /// Where `just` runs, matching `cd /etc/nixos && just …`.
@@ -64,6 +65,43 @@ pub fn external_argv(title: &str, invocation: &Invocation) -> Vec<String> {
     ];
     argv.extend(just_argv(invocation));
     argv
+}
+
+/// A clipboard shortcut the terminal handles itself: VTE leaves these to the host.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ClipboardKey {
+    Copy,
+    Paste,
+}
+
+/// Ctrl+Shift+C copies; Ctrl+Shift+V and Shift+Insert paste. Caps Lock and Num Lock
+/// are ignored, any other modifier is not.
+pub fn clipboard_key(key: gdk::Key, state: gdk::ModifierType) -> Option<ClipboardKey> {
+    use gdk::ModifierType as M;
+    let held =
+        state & (M::CONTROL_MASK | M::SHIFT_MASK | M::ALT_MASK | M::SUPER_MASK | M::META_MASK);
+    let ctrl_shift = M::CONTROL_MASK | M::SHIFT_MASK;
+    match key {
+        gdk::Key::C | gdk::Key::c if held == ctrl_shift => Some(ClipboardKey::Copy),
+        gdk::Key::V | gdk::Key::v if held == ctrl_shift => Some(ClipboardKey::Paste),
+        gdk::Key::Insert | gdk::Key::KP_Insert if held == M::SHIFT_MASK => {
+            Some(ClipboardKey::Paste)
+        }
+        _ => None,
+    }
+}
+
+/// A web address in the terminal's text (PCRE2), without trailing punctuation such as
+/// the full stop that ends a sentence.
+pub const URL_PATTERN: &str = r#"https?://[^\s<>"'`]*[^\s<>"'`.,;:!?)\]}]"#;
+
+/// The link to open, if it is one. Links come from whatever runs in the terminal
+/// (OSC 8 can name any URI), so only web addresses are handed to the desktop.
+pub fn link_to_open(uri: &str) -> Option<&str> {
+    let uri = uri.trim();
+    let (scheme, rest) = uri.split_once("://")?;
+    let web = scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https");
+    (web && !rest.is_empty()).then_some(uri)
 }
 
 /// Turn a `waitpid` status, as VTE reports it, into an exit code; a child killed by a
@@ -146,6 +184,60 @@ mod tests {
             .unwrap()
             .contains("Busy"));
         assert_eq!(ai_exit_message("zfs-pool", 2), None);
+    }
+
+    #[test]
+    fn clipboard_shortcuts() {
+        use gdk::ModifierType as M;
+        let ctrl_shift = M::CONTROL_MASK | M::SHIFT_MASK;
+        assert_eq!(
+            clipboard_key(gdk::Key::C, ctrl_shift),
+            Some(ClipboardKey::Copy)
+        );
+        assert_eq!(
+            clipboard_key(gdk::Key::c, ctrl_shift),
+            Some(ClipboardKey::Copy)
+        );
+        assert_eq!(
+            clipboard_key(gdk::Key::V, ctrl_shift),
+            Some(ClipboardKey::Paste)
+        );
+        assert_eq!(
+            clipboard_key(gdk::Key::Insert, M::SHIFT_MASK),
+            Some(ClipboardKey::Paste)
+        );
+        // Caps Lock / Num Lock do not get in the way.
+        assert_eq!(
+            clipboard_key(gdk::Key::V, ctrl_shift | M::LOCK_MASK),
+            Some(ClipboardKey::Paste)
+        );
+    }
+
+    #[test]
+    fn plain_control_keys_still_reach_the_program() {
+        use gdk::ModifierType as M;
+        // Ctrl+C must stay an interrupt and Ctrl+V a literal-next.
+        assert_eq!(clipboard_key(gdk::Key::c, M::CONTROL_MASK), None);
+        assert_eq!(clipboard_key(gdk::Key::v, M::CONTROL_MASK), None);
+        assert_eq!(clipboard_key(gdk::Key::Insert, M::empty()), None);
+        assert_eq!(
+            clipboard_key(gdk::Key::V, M::CONTROL_MASK | M::SHIFT_MASK | M::ALT_MASK),
+            None
+        );
+    }
+
+    #[test]
+    fn only_web_links_are_opened() {
+        let url = "https://claude.ai/oauth/authorize?code=true&state=x";
+        assert_eq!(link_to_open(url), Some(url));
+        assert_eq!(
+            link_to_open("HTTP://example.com "),
+            Some("HTTP://example.com")
+        );
+        assert_eq!(link_to_open("file:///etc/shadow"), None);
+        assert_eq!(link_to_open("javascript://alert(1)"), None);
+        assert_eq!(link_to_open("https://"), None);
+        assert_eq!(link_to_open("not a link"), None);
     }
 
     #[test]
