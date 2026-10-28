@@ -20,14 +20,6 @@ Fast verify (also run by the Stop hook): `bash scripts/preflight.sh`
 
 ## Repository
 
-- Key directories:
-  - `src/` — the `vexportal` GUI binary: `app.rs`, `dbus_client.rs`, `just.rs`, `system/` (variant + state), `ui/` (GTK4/libadwaita widgets: dashboard, category pages, run page, arg dialogs)
-  - `daemon/src/` — the privileged `vexportal-daemon`: `interface.rs` (D-Bus surface), `auth.rs` (polkit), `executor.rs`, `cancel.rs`, `audit.rs` (journald), `lifecycle.rs`, `config.rs`
-  - `catalog/src/` — shared `vexportal-catalog` library: `catalog.toml` (recipe metadata: titles, descriptions, icons, categories, roles, risk, argument widgets), `lib.rs`, `drift.rs`, `format.rs`, `validate.rs`
-  - `catalog/tests/` — the drift tests (against a fixture and against a real installed justfile)
-  - `data/` — desktop entry, polkit policy, D-Bus system service/policy files, AppStream metainfo, icons, GResource XML, stylesheet
-  - `nix/` — `package.nix` (`rustPlatform.buildRustPackage`), `module.nix` (NixOS module wiring the app, daemon, polkit actions, and D-Bus policy)
-  - `docs/` — project documentation
 - Architecture: **Privilege-separated client/daemon over D-Bus.** The GTK4/libadwaita GUI (`vexportal`) never runs as root; it reads role/variant state locally and calls the system daemon (`io.github.vexportal.Daemon`, running as root) over `zbus` for anything that executes a recipe. The daemon revalidates every recipe and argument against the compiled-in `vexportal-catalog` before `exec`-ing `just` directly (never through a shell), gates execution through polkit at one of three risk tiers (`safe` / `medium` / `destructive`), and audits to journald. The catalog crate is the single source of truth shared by both binaries, cross-checked at test time against the justfile actually installed on a built host (drift detection).
 - CI environment: none configured — `.github/` contains no workflows. `scripts/preflight.sh` is the local gate.
 - OS requirements: Linux-only. The GUI links GTK4/libadwaita/glib via `pkg-config`; the daemon talks to the system D-Bus bus and polkit, and reads `/etc/nixos/vexos-variant`. None of this is portable to non-Linux hosts.
