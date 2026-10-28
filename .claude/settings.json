@@ -5,13 +5,18 @@
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
+      "Bash(git show:*)",
       "Bash(nix develop -c cargo build:*)",
       "Bash(nix develop -c cargo test:*)",
       "Bash(nix develop -c cargo check:*)",
       "Bash(nix develop -c cargo clippy:*)",
       "Bash(nix develop -c cargo fmt:*)",
       "Bash(nix build:*)",
-      "Bash(nix flake check:*)"
+      "Bash(nix flake check:*)",
+      "Bash(bash scripts/preflight.sh:*)",
+      "Bash(scripts/preflight.sh:*)",
+      "WebSearch",
+      "mcp__context7"
     ],
     "deny": [
       "Bash(git add:*)",
@@ -22,7 +27,22 @@
       "Bash(cargo test:*)",
       "Bash(cargo check:*)",
       "Bash(nix shell nixpkgs#cargo:*)",
+      "Bash(nixos-rebuild switch:*)",
+      "Bash(nixos-rebuild boot:*)",
       "Bash(rm -rf:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/verify.sh\"",
+            "timeout": 600
+          }
+        ]
+      }
     ]
   }
 }
