@@ -1,4 +1,4 @@
-//! The AI assistant: setup, Claude accounts and usage, and crash-notification mutes.
+//! The AI assistant: setup and crash-notification mutes.
 //!
 //! The state comes from `vexos-ai status --json`; every change goes
 //! through a `just ai-*` recipe in the terminal, as the user.
@@ -14,14 +14,7 @@ use std::rc::Rc;
 use vexportal_catalog::Format;
 
 /// Rendered by this page's own controls rather than as rows.
-const MANAGED: [&str; 6] = [
-    "ai-pick",
-    "ai-account-add",
-    "ai-account-use",
-    "ai-account-remove",
-    "ai-account-mode",
-    "ai-crash-mute",
-];
+const MANAGED: [&str; 2] = ["ai-pick", "ai-crash-mute"];
 
 pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     let page = adw::PreferencesPage::new();
@@ -56,14 +49,6 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     for group in ui::action_groups(app, window, "ai", &skip) {
         page.add(&group);
     }
-    if state.agent == Some(Agent::Claude) {
-        if let Some(group) = accounts(app, window, &state) {
-            page.add(&group);
-        }
-        if let Some(group) = switching(app, window, &state) {
-            page.add(&group);
-        }
-    }
     if app.visible("ai-crash-mute").is_some() {
         page.add(&crash_mutes(app, window, &state));
     }
@@ -75,8 +60,8 @@ fn finish_installing(app: &Rc<App>, window: &Window, reboot: bool) -> adw::Prefe
     let (title, subtitle, icon, action, label) = if reboot {
         (
             "Reboot to finish installing",
-            "The AI Assistant is installed. Its crash notifications, usage warnings and \
-             theme sync start after a reboot.",
+            "The AI Assistant is installed. Its crash notifications and theme sync \
+             start after a reboot.",
             "system-reboot-symbolic",
             "reboot",
             "Reboot Now",
@@ -120,8 +105,8 @@ pub fn offer_reboot(app: &Rc<App>, window: &Window) {
     let ask = adw::AlertDialog::new(
         Some("Reboot to finish setting up the AI Assistant?"),
         Some(
-            "The AI Assistant is installed. Its crash notifications, usage warnings and theme \
-             sync start after a reboot. Unsaved work in other applications is lost.",
+            "The AI Assistant is installed. Its crash notifications and theme sync start \
+             after a reboot. Unsaved work in other applications is lost.",
         ),
     );
     ask.add_response("later", "Later");
@@ -291,163 +276,6 @@ fn pick(app: &Rc<App>, window: &Window, agent: Agent) {
         });
         ask.present(Some(window.root()));
     });
-}
-
-fn accounts(app: &Rc<App>, window: &Window, state: &AiState) -> Option<adw::PreferencesGroup> {
-    app.visible("ai-account-use")?;
-    let group = adw::PreferencesGroup::builder()
-        .title("Claude Accounts")
-        .description("New Claude Code sessions use the active account. Usage is as last checked.")
-        .build();
-
-    if app.visible("ai-account-add").is_some() {
-        let add = gtk::Button::builder()
-            .icon_name("list-add-symbolic")
-            .tooltip_text("Add Claude Account")
-            .valign(gtk::Align::Center)
-            .build();
-        add.add_css_class("flat");
-        add.connect_clicked({
-            let app = app.clone();
-            let window = window.clone();
-            move |_| actions::activate(&app, &window, "ai-account-add", HashMap::new())
-        });
-        group.set_header_suffix(Some(&add));
-    }
-
-    let can_remove = app.visible("ai-account-remove").is_some();
-    for account in &state.accounts {
-        let row = adw::ActionRow::builder()
-            .title(&account.label)
-            .subtitle(account.subtitle())
-            .use_markup(false)
-            .build();
-        row.set_subtitle_lines(0);
-        row.add_prefix(&gtk::Image::from_icon_name("avatar-default-symbolic"));
-
-        if account.label == state.active {
-            row.add_suffix(&ui::pill("Active", "safe", "New sessions use this account"));
-        } else {
-            let use_ = gtk::Button::with_label("Use");
-            use_.set_valign(gtk::Align::Center);
-            use_.connect_clicked({
-                let app = app.clone();
-                let window = window.clone();
-                let label = account.label.clone();
-                move |_| {
-                    let args = HashMap::from([("target".to_string(), label.clone())]);
-                    actions::activate(&app, &window, "ai-account-use", args)
-                }
-            });
-            row.add_suffix(&use_);
-        }
-        // `main` is Claude's own default sign-in, which vexos-ai never removes.
-        if can_remove && account.label != "main" {
-            let remove = gtk::Button::builder()
-                .icon_name("user-trash-symbolic")
-                .tooltip_text("Remove this account")
-                .valign(gtk::Align::Center)
-                .build();
-            remove.add_css_class("flat");
-            remove.connect_clicked({
-                let app = app.clone();
-                let window = window.clone();
-                let label = account.label.clone();
-                move |_| {
-                    let args = HashMap::from([("label".to_string(), label.clone())]);
-                    actions::activate(&app, &window, "ai-account-remove", args)
-                }
-            });
-            row.add_suffix(&remove);
-        }
-        group.add(&row);
-    }
-    Some(group)
-}
-
-/// Warn only, or switch accounts too, near a threshold. Applied together, since the
-/// recipe takes both.
-fn switching(app: &Rc<App>, window: &Window, state: &AiState) -> Option<adw::PreferencesGroup> {
-    app.visible("ai-account-mode")?;
-    let group = adw::PreferencesGroup::builder()
-        .title("Near a Limit")
-        .description("What happens when the active account nears its session or weekly limit.")
-        .build();
-
-    let mode = adw::ComboRow::builder()
-        .title("When an account nears its limit")
-        .model(&gtk::StringList::new(&[
-            "Notify me",
-            "Switch to the account with the most headroom",
-        ]))
-        .selected(u32::from(state.auto_switch))
-        .build();
-    let threshold = adw::SpinRow::builder()
-        .title("Threshold")
-        .subtitle("Percent of the limit")
-        .adjustment(&gtk::Adjustment::new(
-            f64::from(state.threshold),
-            1.0,
-            100.0,
-            1.0,
-            5.0,
-            0.0,
-        ))
-        .build();
-
-    let apply = gtk::Button::with_label("Apply");
-    apply.set_valign(gtk::Align::Center);
-    apply.add_css_class("suggested-action");
-    apply.set_sensitive(false);
-    group.set_header_suffix(Some(&apply));
-
-    let saved = (state.auto_switch, state.threshold);
-    let current = {
-        let mode = mode.downgrade();
-        let threshold = threshold.downgrade();
-        move || -> Option<(bool, u8)> {
-            Some((
-                mode.upgrade()?.selected() == 1,
-                threshold.upgrade()?.value() as u8,
-            ))
-        }
-    };
-    let current = Rc::new(current);
-    let update = {
-        let apply = apply.downgrade();
-        let current = current.clone();
-        move || {
-            if let (Some(apply), Some(now)) = (apply.upgrade(), current()) {
-                apply.set_sensitive(now != saved);
-            }
-        }
-    };
-    let update = Rc::new(update);
-    mode.connect_selected_notify({
-        let update = update.clone();
-        move |_| update()
-    });
-    threshold.connect_value_notify(move |_| update());
-
-    apply.connect_clicked({
-        let app = app.clone();
-        let window = window.clone();
-        move |_| {
-            let Some((auto, pct)) = current() else { return };
-            let args = HashMap::from([
-                (
-                    "mode".to_string(),
-                    if auto { "auto" } else { "manual" }.to_string(),
-                ),
-                ("pct".to_string(), pct.to_string()),
-            ]);
-            actions::activate(&app, &window, "ai-account-mode", args);
-        }
-    });
-
-    group.add(&mode);
-    group.add(&threshold);
-    Some(group)
 }
 
 fn crash_mutes(app: &Rc<App>, window: &Window, state: &AiState) -> adw::PreferencesGroup {

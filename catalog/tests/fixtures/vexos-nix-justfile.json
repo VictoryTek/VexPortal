@@ -443,55 +443,6 @@
    "parameters": [],
    "private": false
   },
-  "ai-account-add": {
-   "doc": "Sign in an extra Claude account",
-   "parameters": [
-    {
-     "default": null,
-     "kind": "singular",
-     "name": "label"
-    }
-   ],
-   "private": false
-  },
-  "ai-account-mode": {
-   "doc": "Near a usage limit: warn only (manual) or also switch (auto)",
-   "parameters": [
-    {
-     "default": null,
-     "kind": "singular",
-     "name": "mode"
-    },
-    {
-     "default": "",
-     "kind": "singular",
-     "name": "pct"
-    }
-   ],
-   "private": false
-  },
-  "ai-account-remove": {
-   "doc": "Remove an extra Claude account",
-   "parameters": [
-    {
-     "default": null,
-     "kind": "singular",
-     "name": "label"
-    }
-   ],
-   "private": false
-  },
-  "ai-account-use": {
-   "doc": "Pick the Claude account for new sessions (a label, or 'next')",
-   "parameters": [
-    {
-     "default": null,
-     "kind": "singular",
-     "name": "target"
-    }
-   ],
-   "private": false
-  },
   "ai-crash-mute": {
    "doc": "Mute, unmute or list crash notifications",
    "parameters": [

@@ -44,10 +44,8 @@ pub fn ai_exit_message(action: &str, code: i32) -> Option<&'static str> {
     }
     match code {
         2 => Some("That input was not valid."),
-        3 => Some("Not found: no such account, or the assistant is not installed."),
+        3 => Some("Not found: the assistant is not installed."),
         4 => Some("It needs input that was not given."),
-        5 if action == "ai-account-remove" => Some("Close the running Claude session first."),
-        5 => Some("Busy: a running Claude session is using that account."),
         _ => None,
     }
 }
@@ -170,19 +168,10 @@ mod tests {
         assert_eq!(ai_exit_message("ai-pick", 0), None);
         assert_eq!(ai_exit_message("ai-pick", 1), None);
         assert!(ai_exit_message("ai-pick", 2).unwrap().contains("not valid"));
-        assert!(ai_exit_message("ai-account-use", 3)
-            .unwrap()
-            .contains("Not found"));
+        assert!(ai_exit_message("ai-pick", 3).unwrap().contains("Not found"));
         assert!(ai_exit_message("ai-pick", 4)
             .unwrap()
             .contains("needs input"));
-        assert_eq!(
-            ai_exit_message("ai-account-remove", 5),
-            Some("Close the running Claude session first.")
-        );
-        assert!(ai_exit_message("ai-account-use", 5)
-            .unwrap()
-            .contains("Busy"));
         assert_eq!(ai_exit_message("zfs-pool", 2), None);
     }
 
