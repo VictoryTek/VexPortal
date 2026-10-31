@@ -19,16 +19,15 @@ const STATUS_SCHEMA: u64 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
     Claude,
-    OpenCode,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 2] = [Agent::Claude, Agent::OpenCode];
+    pub const ALL: [Agent; 1] = [Agent::Claude];
 
+    /// Any other value, including one an older `vexos-ai` saved, is not a choice.
     fn parse(s: &str) -> Option<Self> {
         match s {
             "claude" => Some(Agent::Claude),
-            "opencode" => Some(Agent::OpenCode),
             _ => None,
         }
     }
@@ -37,21 +36,18 @@ impl Agent {
     pub fn id(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
-            Agent::OpenCode => "opencode",
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
             Agent::Claude => "Claude Code",
-            Agent::OpenCode => "OpenCode",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
             Agent::Claude => "Anthropic. Sign in with a Claude subscription or API key.",
-            Agent::OpenCode => "Open source. Claude, ChatGPT, local models and more.",
         }
     }
 }
@@ -210,6 +206,15 @@ mod tests {
             assert_eq!(Agent::parse(agent.id()), Some(agent));
         }
         assert_eq!(Agent::parse("vim"), None);
+    }
+
+    #[test]
+    fn a_saved_opencode_counts_as_not_chosen() {
+        assert_eq!(Agent::parse("opencode"), None);
+        let state = AiState::from_status(r#"{"schema":1,"agent":"opencode"}"#).unwrap();
+        assert_eq!(state.agent, None);
+        let state = AiState::from_status(r#"{"schema":1,"agent":"something-new"}"#).unwrap();
+        assert_eq!(state.agent, None);
     }
 
     #[test]

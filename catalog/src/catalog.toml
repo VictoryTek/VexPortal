@@ -37,7 +37,7 @@
 id = "ai"
 title = "AI Assistant"
 icon = "user-available-symbolic"
-description = "Claude Code or OpenCode, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
+description = "Claude Code, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
 
 [[page]]
 id = "system"
@@ -124,7 +124,7 @@ description = "Boot a custom kernel from the VexOS kernel registry."
 [[feature]]
 name = "ai"
 title = "AI Assistant"
-description = "Claude Code or OpenCode, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
+description = "Claude Code, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
 
 # ─────────────────────────────── AI Assistant ───────────────────────────────
 #
@@ -137,7 +137,7 @@ id = "agent"
 command = ["agent"]
 implements = "agent"
 title = "Open AI Assistant"
-blurb = "Start Claude Code or OpenCode in /etc/nixos to change or troubleshoot this machine."
+blurb = "Start Claude Code in /etc/nixos to change or troubleshoot this machine."
 icon = "user-available-symbolic"
 page = "ai"
 group = "Assistant"
@@ -172,7 +172,7 @@ id = "ai-pick"
 command = ["ai-pick"]
 implements = "ai-pick"
 title = "Choose AI Assistant"
-blurb = "Use Claude Code or OpenCode as your assistant."
+blurb = "Use Claude Code as your assistant."
 icon = "user-available-symbolic"
 page = "ai"
 group = "Assistant"
@@ -186,7 +186,7 @@ mode_reason = "The choice is saved in your own settings."
   label = "Assistant"
   required = true
   widget = "choice"
-  choices = ["claude", "opencode"]
+  choices = ["claude"]
 
 [[action]]
 id = "ai-crash-mute"

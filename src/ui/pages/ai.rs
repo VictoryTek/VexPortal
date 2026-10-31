@@ -136,7 +136,7 @@ pub fn offer_reboot(app: &Rc<App>, window: &Window) {
 fn setup(app: &Rc<App>, window: &Window) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
         .title("Set up your assistant")
-        .description("Choose the coding agent VexOS opens. You can change this later.")
+        .description("Choose the coding agent VexOS opens.")
         .build();
     for agent in Agent::ALL {
         let row = adw::ActionRow::builder()
@@ -173,7 +173,8 @@ fn current(app: &Rc<App>, window: &Window, agent: Agent) -> adw::PreferencesGrou
     row.set_subtitle_lines(0);
     row.add_prefix(&gtk::Image::from_icon_name("user-available-symbolic"));
 
-    if app.visible("ai-pick").is_some() {
+    // With a single assistant there is nothing to change to.
+    if app.visible("ai-pick").is_some() && Agent::ALL.len() > 1 {
         let change = gtk::Button::with_label("Change…");
         change.set_valign(gtk::Align::Center);
         change.connect_clicked({
