@@ -1450,15 +1450,26 @@ name = "vexportal-daemon"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "futures-util",
  "libc",
  "log",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "tokio-util",
  "uuid",
  "vexportal-catalog",
+ "vexportal-ops",
  "zbus",
+]
+
+[[package]]
+name = "vexportal-ops"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

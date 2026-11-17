@@ -99,7 +99,7 @@ async fn run(
         }
     };
 
-    if let Some(secret) = invocation.stdin.as_deref() {
+    if let Some(secret) = invocation.stdin.as_ref().map(|s| s.expose()) {
         if let Some(mut stdin) = child.stdin.take() {
             // A recipe's `read -rsp` consumes one line; the newline is what ends it.
             let _ = stdin.write_all(format!("{secret}\n").as_bytes()).await;
@@ -169,7 +169,7 @@ where
     })
 }
 
-async fn emit_output(connection: &Connection, job_id: &str, stream: u32, line: &str) {
+pub(crate) async fn emit_output(connection: &Connection, job_id: &str, stream: u32, line: &str) {
     if let Ok(iface) = connection
         .object_server()
         .interface::<_, Daemon>(OBJECT_PATH)
@@ -179,7 +179,7 @@ async fn emit_output(connection: &Connection, job_id: &str, stream: u32, line: &
     }
 }
 
-async fn emit_finished(connection: &Connection, job_id: &str, exit_code: i32) {
+pub(crate) async fn emit_finished(connection: &Connection, job_id: &str, exit_code: i32) {
     if let Ok(iface) = connection
         .object_server()
         .interface::<_, Daemon>(OBJECT_PATH)

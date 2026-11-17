@@ -182,7 +182,7 @@ async fn serve(commands: async_channel::Receiver<Command>, events: async_channel
                 recipe,
                 args,
             } => {
-                let event = match proxy.run_recipe(&recipe, args).await {
+                let event = match proxy.run_operation(&recipe, args).await {
                     Ok(job_id) => Event::Started { request_id, job_id },
                     Err(e) => Event::Failed {
                         request_id,
@@ -235,7 +235,7 @@ fn friendly(error: &zbus::Error) -> String {
     default_path = "/io/github/vexportal/Daemon"
 )]
 trait Daemon {
-    fn run_recipe(&self, recipe: &str, args: HashMap<String, String>) -> zbus::Result<String>;
+    fn run_operation(&self, op_id: &str, args: HashMap<String, String>) -> zbus::Result<String>;
     fn cancel(&self, job_id: &str) -> zbus::Result<bool>;
     fn list_jobs(&self) -> zbus::Result<Vec<(String, String)>>;
 

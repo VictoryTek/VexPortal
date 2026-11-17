@@ -12,6 +12,10 @@ mod config;
 mod executor;
 mod interface;
 mod lifecycle;
+mod native;
+// First used by the VPN and service operations in a later phase.
+#[allow(dead_code)]
+mod systemd;
 
 use config::Config;
 use interface::Daemon;

@@ -1,0 +1,14 @@
+[package]
+name = "vexportal-ops"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Native VexOS operations shared by the VexPortal daemon and GUI: pure logic, no D-Bus, no GTK"
+
+[dependencies]
+thiserror.workspace = true
+# Only the lock that serialises edits to one file; no runtime, so the crate stays
+# usable from any executor.
+tokio = { version = "1", default-features = false, features = ["sync"] }

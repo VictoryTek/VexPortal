@@ -7,15 +7,21 @@ use std::path::{Path, PathBuf};
 /// D-Bus caller, so an unprivileged client cannot point it at a justfile of its own.
 pub const DEFAULT_JUSTFILE: &str = "/etc/nixos/justfile";
 
+/// Where a VexOS host keeps its configuration. Native operations read and write only
+/// here; like the justfile path, it is fixed by the daemon, never by a caller.
+pub const NIXOS_DIR: &str = "/etc/nixos";
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub justfile: PathBuf,
+    pub nixos_dir: PathBuf,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             justfile: PathBuf::from(DEFAULT_JUSTFILE),
+            nixos_dir: PathBuf::from(NIXOS_DIR),
         }
     }
 }
@@ -73,9 +79,37 @@ pub fn recipe_environment() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+/// The environment a native operation's tools run in. Same idea as
+/// [`recipe_environment`]: nothing inherited, a fixed `PATH`. No `VEXOS_ASSUME_YES`,
+/// because native operations enforce their own confirmations.
+pub fn tool_environment() -> Vec<(&'static str, &'static str)> {
+    vec![
+        (
+            "PATH",
+            "/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin:/bin",
+        ),
+        ("HOME", "/root"),
+        ("LANG", "C.UTF-8"),
+        ("NO_COLOR", "1"),
+        ("TERM", "dumb"),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tools_never_see_the_recipe_confirmation_bypass() {
+        assert!(tool_environment()
+            .iter()
+            .all(|(name, _)| *name != "VEXOS_ASSUME_YES"));
+    }
+
+    #[test]
+    fn native_operations_are_confined_to_etc_nixos() {
+        assert_eq!(Config::default().nixos_dir, Path::new("/etc/nixos"));
+    }
 
     #[test]
     fn defaults_to_the_installed_justfile() {

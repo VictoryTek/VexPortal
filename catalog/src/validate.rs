@@ -6,10 +6,27 @@
 //! runs [`build_for_terminal`], the same checks for the actions that run as the user.
 
 use crate::format::FormatError;
-use crate::{Action, Catalog, Mode, Param, Risk, Widget};
+use crate::{Action, Backend, Catalog, Mode, Param, Risk, Widget};
 use std::collections::BTreeMap;
 
-/// A validated request, ready to hand to `just`.
+/// A secret answer. `Debug` hides it, so a stray `{:?}` in a log line or a panic message
+/// cannot leak it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Secret(String);
+
+impl Secret {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
+/// A validated request, ready to hand to `just` or to a native operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invocation {
     /// The action id, guaranteed to exist in the catalog.
@@ -20,10 +37,17 @@ pub struct Invocation {
     pub argv: Vec<String>,
     /// Written to the child's stdin rather than argv, so it stays out of `ps`,
     /// the journal, and the audit record.
-    pub stdin: Option<String>,
+    pub stdin: Option<Secret>,
     pub risk: Risk,
     /// Absolute paths the daemon should confirm exist before starting.
     pub must_exist: Vec<String>,
+    pub backend: Backend,
+    /// Every validated answer that is not a secret, by parameter name. Empty optional
+    /// answers are left out. This is what a native operation reads; `argv` is the same
+    /// information positioned for `just`.
+    pub named: BTreeMap<String, String>,
+    /// Secret answers by parameter name, for a native operation.
+    pub secrets: BTreeMap<String, Secret>,
 }
 
 impl Invocation {
@@ -36,6 +60,16 @@ impl Invocation {
 
     /// A redacted, human-readable rendering for the audit log.
     pub fn audit_line(&self) -> String {
+        if self.backend == Backend::Native {
+            let mut line = format!("op {}", self.action);
+            for (name, value) in &self.named {
+                line.push_str(&format!(" {name}={value}"));
+            }
+            for name in self.secrets.keys() {
+                line.push_str(&format!(" {name}=<redacted>"));
+            }
+            return line;
+        }
         let mut line = format!("just {}", self.command.join(" "));
         for arg in &self.argv {
             line.push(' ');
@@ -125,8 +159,10 @@ fn invocation(
     }
 
     let mut argv: Vec<String> = Vec::new();
-    let mut stdin: Option<String> = None;
+    let mut stdin: Option<Secret> = None;
     let mut must_exist: Vec<String> = Vec::new();
+    let mut named: BTreeMap<String, String> = BTreeMap::new();
+    let mut secrets: BTreeMap<String, Secret> = BTreeMap::new();
 
     for param in &action.params {
         let value = answers
@@ -143,7 +179,8 @@ fn invocation(
                 });
             }
             if !value.is_empty() {
-                stdin = Some(value);
+                secrets.insert(param.name.clone(), Secret(value.clone()));
+                stdin = Some(Secret(value));
             }
             continue;
         }
@@ -162,6 +199,7 @@ fn invocation(
         if let Widget::Path { must_exist: true } = param.widget {
             must_exist.push(value.clone());
         }
+        named.insert(param.name.clone(), value.clone());
         argv.push(value);
     }
 
@@ -179,6 +217,9 @@ fn invocation(
         stdin,
         risk: action.risk,
         must_exist,
+        backend: action.backend,
+        named,
+        secrets,
     })
 }
 
@@ -378,9 +419,47 @@ mod tests {
             &answers(&[("password", "hunter2")]),
         )
         .unwrap();
-        assert_eq!(inv.stdin.as_deref(), Some("hunter2"));
+        assert_eq!(inv.stdin.as_ref().map(Secret::expose), Some("hunter2"));
         assert!(!inv.argv.iter().any(|a| a.contains("hunter2")));
         assert!(!inv.audit_line().contains("hunter2"));
+    }
+
+    #[test]
+    fn answers_are_available_by_name_and_secrets_stay_apart() {
+        let catalog = Catalog::parse(
+            "[[page]]\nid = \"p\"\ntitle = \"P\"\nicon = \"i\"\n\n\
+             [[action]]\nid = \"login\"\ncommand = [\"login\"]\nbackend = \"native\"\n\
+             implements = \"login\"\ntitle = \"T\"\nblurb = \"b\"\nicon = \"i\"\n\
+             page = \"p\"\ngroup = \"g\"\nroles = [\"desktop\"]\nrisk = \"medium\"\n\
+             [[action.params]]\nname = \"user\"\nlabel = \"User\"\nrequired = true\nwidget = \"text\"\n\
+             [[action.params]]\nname = \"password\"\nlabel = \"Password\"\n\
+             required = true\nwidget = \"secret\"\n",
+        )
+        .unwrap();
+        let inv = build(
+            &catalog,
+            "login",
+            &answers(&[("user", "bob"), ("password", "hunter2")]),
+        )
+        .unwrap();
+        assert_eq!(inv.named.get("user").map(String::as_str), Some("bob"));
+        assert!(!inv.named.contains_key("password"));
+        assert_eq!(inv.secrets["password"].expose(), "hunter2");
+        // Neither a debug dump nor the audit line can carry the secret.
+        assert!(!format!("{inv:?}").contains("hunter2"));
+        assert_eq!(inv.audit_line(), "op login user=bob password=<redacted>");
+    }
+
+    #[test]
+    fn recipe_actions_still_audit_as_just_commands() {
+        let inv = build(
+            &catalog(),
+            "feature-enable",
+            &answers(&[("feature", "gaming")]),
+        )
+        .unwrap();
+        assert_eq!(inv.backend, Backend::Recipe);
+        assert!(inv.audit_line().starts_with("just "));
     }
 
     #[test]

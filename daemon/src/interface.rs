@@ -1,8 +1,9 @@
 //! The D-Bus surface: `io.github.vexportal.Daemon1`.
 //!
-//! Two methods and two signals. Everything the GUI can read without privileges — the
-//! variant, the current generation, the feature list — it reads for itself; asking a
-//! root daemon to `cat` a world-readable file would be surface for no benefit.
+//! `RunOperation` starts a job, `Query` answers a read-only question, `Cancel` stops a
+//! job, and two signals carry a job's output and its end. Everything the GUI can read
+//! without privileges — the variant, the current generation — it reads for itself;
+//! asking a root daemon to `cat` a world-readable file would be surface for no benefit.
 
 use crate::audit;
 use crate::auth;
@@ -10,13 +11,14 @@ use crate::cancel::JobHandle;
 use crate::config::Config;
 use crate::executor;
 use crate::lifecycle::IdleTracker;
+use crate::native;
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use vexportal_catalog::validate::{self, ValidationError};
-use vexportal_catalog::Catalog;
+use vexportal_catalog::{Backend, Catalog};
 use zbus::{fdo, interface, object_server::SignalEmitter};
 
 /// A rebuild, an update and a kernel build is already an unusual amount to have in
@@ -47,18 +49,14 @@ impl Daemon {
     }
 }
 
-#[interface(name = "io.github.vexportal.Daemon1")]
 impl Daemon {
-    /// Validate a request against the catalog and, if polkit agrees, run it.
-    ///
-    /// Returns a job id; output arrives as `JobOutput` signals and the result as
-    /// `JobFinished`.
-    async fn run_recipe(
+    /// Validate a request, authorise it, and start it as a job.
+    async fn start(
         &self,
-        recipe: &str,
+        action_id: &str,
         args: HashMap<String, String>,
-        #[zbus(header)] header: zbus::message::Header<'_>,
-        #[zbus(connection)] connection: &zbus::Connection,
+        header: &zbus::message::Header<'_>,
+        connection: &zbus::Connection,
     ) -> fdo::Result<String> {
         let caller = header
             .sender()
@@ -68,8 +66,8 @@ impl Daemon {
         // Validate before authenticating: a malformed request should be rejected
         // outright rather than after making someone type a password for it.
         let answers: BTreeMap<String, String> = args.into_iter().collect();
-        let invocation = validate::build(&self.catalog, recipe, &answers).map_err(|e| {
-            audit::rejected(&caller, recipe, &e.to_string());
+        let invocation = validate::build(&self.catalog, action_id, &answers).map_err(|e| {
+            audit::rejected(&caller, action_id, &e.to_string());
             match e {
                 ValidationError::UnknownAction(_) | ValidationError::TerminalOnly(_) => {
                     fdo::Error::AccessDenied(e.to_string())
@@ -78,9 +76,18 @@ impl Daemon {
             }
         })?;
 
+        // A native action must have a handler. Refuse here, before a polkit prompt, so a
+        // catalog entry that got ahead of its implementation is a plain error.
+        if invocation.backend == Backend::Native && !vexportal_ops::is_native(action_id) {
+            audit::rejected(&caller, action_id, "native action without a handler");
+            return Err(fdo::Error::NotSupported(format!(
+                "`{action_id}` is not implemented yet"
+            )));
+        }
+
         for path in &invocation.must_exist {
             if !std::path::Path::new(path).exists() {
-                audit::rejected(&caller, recipe, "a required file does not exist");
+                audit::rejected(&caller, action_id, "a required file does not exist");
                 return Err(fdo::Error::InvalidArgs(format!("`{path}` does not exist")));
             }
         }
@@ -97,7 +104,7 @@ impl Daemon {
             .await
             .map_err(fdo::Error::Failed)?
         {
-            audit::rejected(&caller, recipe, "polkit denied the request");
+            audit::rejected(&caller, action_id, "polkit denied the request");
             return Err(fdo::Error::AccessDenied(
                 "Not authorized to run this operation".into(),
             ));
@@ -112,10 +119,86 @@ impl Daemon {
         );
         self.idle.lock().await.mark_active();
 
-        let handle = executor::spawn(job_id.clone(), invocation, &self.config, connection.clone());
+        let handle = match invocation.backend {
+            Backend::Native => {
+                native::spawn_job(job_id.clone(), invocation, &self.config, connection.clone())
+            }
+            Backend::Recipe => {
+                executor::spawn(job_id.clone(), invocation, &self.config, connection.clone())
+            }
+        };
         self.jobs.lock().await.insert(job_id.clone(), handle);
 
         Ok(job_id)
+    }
+}
+
+#[interface(name = "io.github.vexportal.Daemon1")]
+impl Daemon {
+    /// Start an action by its catalog id. The catalog says whether it runs as a native
+    /// operation or, until every action is native, as a `just` recipe.
+    ///
+    /// Returns a job id; output arrives as `JobOutput` signals and the result as
+    /// `JobFinished`.
+    async fn run_operation(
+        &self,
+        op_id: &str,
+        args: HashMap<String, String>,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+    ) -> fdo::Result<String> {
+        self.start(op_id, args, &header, connection).await
+    }
+
+    /// The same as `RunOperation`, under the name earlier GUIs call. Removed with the
+    /// recipe backend.
+    async fn run_recipe(
+        &self,
+        recipe: &str,
+        args: HashMap<String, String>,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+    ) -> fdo::Result<String> {
+        self.start(recipe, args, &header, connection).await
+    }
+
+    /// Answer a read-only question about the host with JSON. Changes nothing, so it needs
+    /// only the read-only polkit action, which asks for no password.
+    async fn query(
+        &self,
+        op_id: &str,
+        args: HashMap<String, String>,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
+    ) -> fdo::Result<String> {
+        let caller = header
+            .sender()
+            .ok_or_else(|| fdo::Error::Failed("D-Bus message has no sender".into()))?
+            .to_string();
+
+        if !vexportal_ops::is_query(op_id) {
+            audit::rejected(&caller, op_id, "not a query");
+            return Err(fdo::Error::AccessDenied(format!(
+                "`{op_id}` is not a query VexPortal knows about"
+            )));
+        }
+        if !auth::check(
+            connection,
+            &caller,
+            vexportal_catalog::Risk::Safe.polkit_action(),
+        )
+        .await
+        .map_err(fdo::Error::Failed)?
+        {
+            audit::rejected(&caller, op_id, "polkit denied the request");
+            return Err(fdo::Error::AccessDenied(
+                "Not authorized to read this".into(),
+            ));
+        }
+
+        let args: vexportal_ops::Args = args.into_iter().collect();
+        vexportal_ops::query(op_id, &self.config.nixos_dir, &args)
+            .map_err(|e| fdo::Error::Failed(e.to_string()))
     }
 
     /// Stop a running job. Returns false if it had already finished.

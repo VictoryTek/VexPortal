@@ -216,6 +216,18 @@ pub enum Mode {
     Terminal,
 }
 
+/// What carries an action out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Backend {
+    /// The legacy path: the daemon runs `just <command> <argv>`. Goes away once every
+    /// action is native.
+    #[default]
+    Recipe,
+    /// A typed operation in the `vexportal-ops` crate, named by the action id.
+    Native,
+}
+
 /// A single entry in the portal.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Action {
@@ -234,6 +246,9 @@ pub struct Action {
     pub group: String,
     pub roles: Vec<Role>,
     pub risk: Risk,
+    /// How the daemon carries it out. Defaults to the recipe path.
+    #[serde(default)]
+    pub backend: Backend,
     /// Shown in a confirmation dialog before the action runs.
     #[serde(default)]
     pub confirm: Option<String>,
@@ -491,6 +506,15 @@ mod tests {
         let err = single("command = [\"a\"]\nrisk = \"destructive\"\n").unwrap_err();
         assert!(err.to_string().contains("confirm"), "{err}");
         single("command = [\"a\"]\nrisk = \"destructive\"\nconfirm = \"Sure?\"\n").unwrap();
+    }
+
+    #[test]
+    fn actions_run_as_recipes_unless_marked_native() {
+        let catalog = single("command = [\"a\"]\nrisk = \"safe\"\n").unwrap();
+        assert_eq!(catalog.actions[0].backend, Backend::Recipe);
+        let catalog = single("command = [\"a\"]\nrisk = \"safe\"\nbackend = \"native\"\n").unwrap();
+        assert_eq!(catalog.actions[0].backend, Backend::Native);
+        assert!(single("command = [\"a\"]\nrisk = \"safe\"\nbackend = \"shell\"\n").is_err());
     }
 
     #[test]

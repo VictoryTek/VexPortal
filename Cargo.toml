@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "catalog", "daemon"]
+members = [".", "catalog", "daemon", "ops"]
 resolver = "2"
 
 [workspace.package]
@@ -11,6 +11,7 @@ repository = "https://github.com/VictoryTek/VexPortal"
 
 [workspace.dependencies]
 vexportal-catalog = { path = "catalog" }
+vexportal-ops = { path = "ops" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
