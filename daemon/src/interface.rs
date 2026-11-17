@@ -111,18 +111,18 @@ impl Daemon {
         }
 
         let job_id = Uuid::new_v4().to_string();
-        audit::started(
-            &job_id,
-            &caller,
-            uid_of(connection, &caller).await,
-            &invocation,
-        );
+        let uid = uid_of(connection, &caller).await;
+        audit::started(&job_id, &caller, uid, &invocation);
         self.idle.lock().await.mark_active();
 
         let handle = match invocation.backend {
-            Backend::Native => {
-                native::spawn_job(job_id.clone(), invocation, &self.config, connection.clone())
-            }
+            Backend::Native => native::spawn_job(
+                job_id.clone(),
+                invocation,
+                &self.config,
+                connection.clone(),
+                uid,
+            ),
             Backend::Recipe => {
                 executor::spawn(job_id.clone(), invocation, &self.config, connection.clone())
             }

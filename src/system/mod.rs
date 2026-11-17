@@ -8,6 +8,7 @@
 
 pub mod ai;
 pub mod state;
+pub mod tailscale;
 pub mod variant;
 pub mod vpn;
 

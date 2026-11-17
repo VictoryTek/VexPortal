@@ -10,7 +10,8 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 /// Shown as controls on the status card rather than as rows.
-const CONTROLS: [&str; 7] = [
+const CONTROLS: [&str; 8] = [
+    "tailscale-operator",
     "vpn-status",
     "vpn-up",
     "vpn-down",
@@ -34,6 +35,9 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
         } else {
             page.add(&not_installed(app, window));
         }
+    }
+    if app.visible("tailscale-operator").is_some() {
+        page.add(&super::tailscale::build(app, window));
     }
     for group in ui::action_groups(app, window, "network", &CONTROLS) {
         page.add(&group);

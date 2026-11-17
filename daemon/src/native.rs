@@ -296,6 +296,7 @@ pub fn spawn_job(
     invocation: Invocation,
     config: &Config,
     connection: Connection,
+    caller_uid: Option<u32>,
 ) -> JobHandle {
     let cancel = CancellationToken::new();
     let token = cancel.clone();
@@ -304,7 +305,7 @@ pub fn spawn_job(
     let config = config.clone();
 
     let task = tokio::spawn(async move {
-        let exit_code = run(&id, invocation, &config, &connection, token).await;
+        let exit_code = run(&id, invocation, &config, &connection, token, caller_uid).await;
         audit::finished(&id, exit_code);
         emit_finished(&connection, &id, exit_code).await;
     });
@@ -323,6 +324,7 @@ async fn run(
     config: &Config,
     connection: &Connection,
     cancel: CancellationToken,
+    caller_uid: Option<u32>,
 ) -> i32 {
     info!("job {job_id}: {}", invocation.audit_line());
 
@@ -339,7 +341,7 @@ async fn run(
     };
     let sink = ChannelSink(tx);
 
-    let code = execute(job_id, &invocation, config, &sink, cancel).await;
+    let code = execute(job_id, &invocation, config, &sink, cancel, caller_uid).await;
 
     drop(sink);
     let _ = emitter.await;
@@ -358,6 +360,7 @@ async fn execute(
     config: &Config,
     sink: &dyn Sink,
     cancel: CancellationToken,
+    caller_uid: Option<u32>,
 ) -> i32 {
     let runner = TokioRunner::new(cancel.clone());
     let secrets: BTreeMap<String, Secret> = invocation
@@ -372,9 +375,7 @@ async fn execute(
         sink,
         args: &invocation.named,
         secrets: &secrets,
-        // Filled in once an operation needs it; the interface already looks it up for
-        // the audit record.
-        caller_uid: None,
+        caller_uid,
     };
 
     let code = match vexportal_ops::run(&invocation.action, &ctx).await {
@@ -704,6 +705,7 @@ mod tests {
             &Config::default(),
             &sink,
             CancellationToken::new(),
+            None,
         )
         .await;
 
@@ -717,7 +719,15 @@ mod tests {
         token.cancel();
         let sink = CollectSink::new();
 
-        let code = execute("job", &feature_enable(), &Config::default(), &sink, token).await;
+        let code = execute(
+            "job",
+            &feature_enable(),
+            &Config::default(),
+            &sink,
+            token,
+            None,
+        )
+        .await;
 
         assert_eq!(code, -1);
         assert!(sink.text().contains("Cancelled"));

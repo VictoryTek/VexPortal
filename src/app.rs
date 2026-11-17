@@ -6,6 +6,7 @@ use crate::just::JustfileFacts;
 use crate::system::{ai, SystemState, Variant};
 use crate::ui::{pages, window::Window};
 
+use gtk::prelude::ApplicationExt;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -154,6 +155,10 @@ impl App {
 }
 
 pub fn build(application: &adw::Application) {
+    // A Tailscale sign-in still waiting in the browser would otherwise leave its
+    // `tailscale up` running after the last window closes.
+    application.connect_shutdown(|_| pages::stop_tailscale_sign_in());
+
     let catalog = match Catalog::load() {
         Ok(catalog) => catalog,
         Err(e) => {

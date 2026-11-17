@@ -24,6 +24,7 @@ pub mod rebuild;
 pub mod runner;
 pub mod sidefile;
 pub mod system;
+pub mod tailscale;
 pub mod upgrade;
 
 use runner::{Cmd, RunError, Runner, Sink};
@@ -74,6 +75,7 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "feature-enable",
     "feature-disable",
     "fix-flake",
+    "tailscale-operator",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -130,6 +132,7 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "feature-enable" => features::enable(ctx).await,
         "feature-disable" => features::disable(ctx).await,
         "fix-flake" => features::fix_flake(ctx).await,
+        "tailscale-operator" => tailscale::operator(ctx).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;
@@ -228,6 +231,7 @@ pub(crate) mod testkit {
         pub sink: CollectSink,
         pub args: Args,
         pub secrets: BTreeMap<String, Secret>,
+        pub caller: Option<u32>,
     }
 
     impl Kit {
@@ -242,6 +246,7 @@ pub(crate) mod testkit {
                 sink: CollectSink::new(),
                 args: Args::new(),
                 secrets: BTreeMap::new(),
+                caller: None,
             }
         }
 
@@ -268,7 +273,7 @@ pub(crate) mod testkit {
                 sink: &self.sink,
                 args: &self.args,
                 secrets: &self.secrets,
-                caller_uid: None,
+                caller_uid: self.caller,
             }
         }
     }

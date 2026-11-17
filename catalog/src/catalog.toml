@@ -670,18 +670,15 @@ risk = "destructive"
 confirm = "Traffic will leave this machine outside the VPN tunnel whenever the tunnel is down."
 
 [[action]]
-id = "setup-tailscale"
-command = ["setup-tailscale"]
-implements = "setup-tailscale"
-title = "Set Up Tailscale"
-blurb = "First-time Tailscale setup: let your account control Tailscale, then connect. Prints a link to sign in with in a browser."
+id = "tailscale-operator"
+backend = "native"
+title = "Let Me Control Tailscale"
+blurb = "Allow your account to run Tailscale without sudo. This is the root step of the Tailscale setup; the Tailscale card then signs you in."
 icon = "network-workgroup-symbolic"
 page = "network"
 group = "Tailscale"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
 risk = "medium"
-mode = "terminal"
-mode_reason = "It makes your own account the Tailscale operator, so it has to run as you."
 
 # ─────────────────────────────── Services ───────────────────────────────
 # `_require-server-role` gates these on a variant containing "server", which covers
@@ -1168,6 +1165,10 @@ mode_reason = "A guided setup that prints keys and instructions to act on."
 # ─────────────────────────────── Not surfaced ───────────────────────────────
 # Public justfile recipes VexPortal deliberately leaves to the CLI. Listed here so the
 # drift check stays quiet about them rather than being switched off entirely.
+
+[[excluded]]
+name = "setup-tailscale"
+reason = "Replaced by the Tailscale card: the daemon sets the operator, and VexPortal shows the sign-in link."
 
 [[excluded]]
 name = "update"

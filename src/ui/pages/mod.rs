@@ -10,6 +10,7 @@ mod network;
 mod overview;
 mod services;
 mod system;
+mod tailscale;
 
 use crate::app::App;
 use crate::ui::{self, window::Window};
@@ -22,6 +23,7 @@ pub const OVERVIEW: &str = "__overview";
 pub const ACTIVITY: &str = "__activity";
 
 pub use ai::offer_reboot as offer_ai_reboot;
+pub use tailscale::stop_sign_in as stop_tailscale_sign_in;
 
 pub fn build(app: &Rc<App>, window: &Window, id: &str) -> adw::NavigationPage {
     match id {
