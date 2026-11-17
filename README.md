@@ -30,7 +30,7 @@ State the GUI can read without privileges — features.nix, server-services.nix,
 rather than "run a command to find out" buttons.
 
 The **AI Assistant** page appears in the sidebar once `ai` is on in features.nix. It
-sets up `vexos-ai` (Claude Code) and unmutes crash notifications. It reads
+sets up `vexos-ai` with the assistant you choose (Claude Code, Codex or OpenCode) and unmutes crash notifications. It reads
 `vexos-ai`'s state from your home and makes every change through the justfile's `ai-*`
 recipes. Until a rebuild installs `vexos-ai`, it offers only the rebuild.
 

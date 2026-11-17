@@ -33,14 +33,17 @@ fn switches(app: &Rc<App>, window: &Window) -> adw::PreferencesGroup {
         )
         .build();
 
-    // Only the features this justfile actually knows, when it could be read.
-    let known = &app.facts.features;
+    // Only the features this role has: the same table the daemon edits by.
+    let role = app.role().as_str();
     let state = app.state.borrow();
     for feature in &app.catalog.features {
-        if !known.is_empty() && !known.contains(&feature.name) {
+        let Some(status) = state.feature(&feature.name) else {
+            continue;
+        };
+        if !vexportal_ops::features::find(&feature.name).is_some_and(|f| f.available_on(role)) {
             continue;
         }
-        let (enabled, defaulted) = state.settings.feature(&feature.name, feature.default_on);
+        let (enabled, defaulted) = (status.enabled, status.defaulted);
         let subtitle = if defaulted && enabled {
             format!("{} On by default.", feature.description)
         } else {

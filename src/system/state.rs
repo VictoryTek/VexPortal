@@ -36,11 +36,23 @@ pub struct SystemState {
     pub rebuild_needed: bool,
     /// `option = value` settings from features.nix and server-services.nix.
     pub settings: Settings,
+    /// The text of features.nix, read with the same code the daemon edits it with.
+    pub features_text: String,
     /// How long since the newest flake input was updated.
     pub lock_age: Option<Duration>,
 }
 
 impl SystemState {
+    /// Whether a feature is on, and whether that is only the module default. `None` for a
+    /// name that is not a feature.
+    pub fn feature(&self, name: &str) -> Option<vexportal_ops::features::Status> {
+        let feature = vexportal_ops::features::find(name)?;
+        Some(vexportal_ops::features::status(
+            &self.features_text,
+            feature,
+        ))
+    }
+
     pub fn read() -> Self {
         let mut settings = Settings::default();
         // vm-platform.nix last: it is where a switch writes the hypervisor now.
@@ -57,6 +69,7 @@ impl SystemState {
             reboot_pending: reboot_pending(),
             rebuild_needed: rebuild_needed(),
             settings,
+            features_text: std::fs::read_to_string(FEATURES_FILE).unwrap_or_default(),
             lock_age: read_lock_age(),
         }
     }
@@ -113,14 +126,6 @@ impl Settings {
 
     fn is_true(&self, key: &str) -> Option<bool> {
         self.get(key).map(|v| v == "true")
-    }
-
-    /// Whether a feature is on, and whether that is only the module default.
-    pub fn feature(&self, name: &str, default_on: bool) -> (bool, bool) {
-        match self.is_true(&format!("vexos.features.{name}.enable")) {
-            Some(enabled) => (enabled, false),
-            None => (default_on, true),
-        }
     }
 
     pub fn service_enabled(&self, name: &str) -> bool {
@@ -247,23 +252,27 @@ mod tests {
     }
 
     #[test]
-    fn features_are_explicit_or_defaulted() {
-        let s = settings(
-            "{\n  vexos.features.gaming.enable = true;\n\
-             # vexos.features.print3d.enable = true;\n\
-             vexos.features.sunshine.enable = false;\n}\n",
-        );
-        assert_eq!(s.feature("gaming", false), (true, false));
-        assert_eq!(s.feature("print3d", false), (false, true));
-        assert_eq!(s.feature("sunshine", true), (false, false));
-        assert_eq!(s.feature("vpn", false), (false, true));
-    }
-
-    #[test]
-    fn a_trailing_comment_does_not_hide_an_enabled_feature() {
-        // L8.
-        let s = settings("  vexos.features.vpn.enable = true; # PIA\n");
-        assert_eq!(s.feature("vpn", false), (true, false));
+    fn the_page_reads_features_with_the_shared_rules() {
+        let state = SystemState {
+            features_text: "{
+  vexos.features.gaming.enable = true;
+  # vexos.features.print3d.enable = true;
+  vexos.features.sunshine.enable = false;
+  vexos.features.vpn.enable = true; # PIA
+}
+"
+            .to_string(),
+            ..Default::default()
+        };
+        let on = |name: &str| {
+            let s = state.feature(name).unwrap();
+            (s.enabled, s.defaulted)
+        };
+        assert_eq!(on("gaming"), (true, false));
+        assert_eq!(on("print3d"), (false, true));
+        assert_eq!(on("sunshine"), (false, false));
+        assert_eq!(on("vpn"), (true, false));
+        assert!(state.feature("not-a-feature").is_none());
     }
 
     #[test]

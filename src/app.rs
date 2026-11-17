@@ -68,13 +68,7 @@ impl App {
 
     /// Whether `ai` is on in features.nix, explicitly or by the module default.
     pub fn ai_enabled(&self) -> bool {
-        let default_on = self
-            .catalog
-            .features
-            .iter()
-            .find(|f| f.name == "ai")
-            .is_some_and(|f| f.default_on);
-        self.state.borrow().settings.feature("ai", default_on).0
+        self.state.borrow().feature("ai").is_some_and(|s| s.enabled)
     }
 
     pub fn refresh_state(&self) {

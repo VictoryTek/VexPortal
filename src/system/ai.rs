@@ -19,15 +19,19 @@ const STATUS_SCHEMA: u64 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agent {
     Claude,
+    Codex,
+    OpenCode,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 1] = [Agent::Claude];
+    pub const ALL: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::OpenCode];
 
-    /// Any other value, including one an older `vexos-ai` saved, is not a choice.
+    /// Any other value, including one a newer `vexos-ai` saved, is not a choice.
     fn parse(s: &str) -> Option<Self> {
         match s {
             "claude" => Some(Agent::Claude),
+            "codex" => Some(Agent::Codex),
+            "opencode" => Some(Agent::OpenCode),
             _ => None,
         }
     }
@@ -36,18 +40,24 @@ impl Agent {
     pub fn id(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
+            Agent::Codex => "codex",
+            Agent::OpenCode => "opencode",
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
             Agent::Claude => "Claude Code",
+            Agent::Codex => "Codex",
+            Agent::OpenCode => "OpenCode",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
             Agent::Claude => "Anthropic. Sign in with a Claude subscription or API key.",
+            Agent::Codex => "OpenAI. Sign in with ChatGPT or an API key.",
+            Agent::OpenCode => "Open source. Claude, ChatGPT, local models and more.",
         }
     }
 }
@@ -209,12 +219,28 @@ mod tests {
     }
 
     #[test]
-    fn a_saved_opencode_counts_as_not_chosen() {
-        assert_eq!(Agent::parse("opencode"), None);
-        let state = AiState::from_status(r#"{"schema":1,"agent":"opencode"}"#).unwrap();
-        assert_eq!(state.agent, None);
+    fn all_three_assistants_are_choices_and_anything_else_is_not() {
+        assert_eq!(Agent::ALL.len(), 3);
+        for (saved, agent) in [
+            ("claude", Agent::Claude),
+            ("codex", Agent::Codex),
+            ("opencode", Agent::OpenCode),
+        ] {
+            let json = format!(r#"{{"schema":1,"agent":"{saved}"}}"#);
+            assert_eq!(AiState::from_status(&json).unwrap().agent, Some(agent));
+            assert_eq!(agent.id(), saved);
+        }
         let state = AiState::from_status(r#"{"schema":1,"agent":"something-new"}"#).unwrap();
         assert_eq!(state.agent, None);
+    }
+
+    #[test]
+    fn each_assistant_has_its_own_name_and_blurb() {
+        let titles: Vec<&str> = Agent::ALL.iter().map(|a| a.title()).collect();
+        assert_eq!(titles, ["Claude Code", "Codex", "OpenCode"]);
+        for agent in Agent::ALL {
+            assert!(!agent.description().is_empty());
+        }
     }
 
     #[test]

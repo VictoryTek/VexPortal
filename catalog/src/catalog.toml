@@ -37,7 +37,7 @@
 id = "ai"
 title = "AI Assistant"
 icon = "user-available-symbolic"
-description = "Claude Code, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
+description = "An AI assistant (Claude Code, Codex or OpenCode), set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
 
 [[page]]
 id = "system"
@@ -82,8 +82,8 @@ icon = "applications-utilities-symbolic"
 description = "One-off setup tasks for this machine and your account."
 
 # ─────────────────────────────── Features ───────────────────────────────
-# One switch each on the Features page. `default_on` mirrors the module default the
-# justfile's `_feature-list` assumes when features.nix does not mention the feature.
+# One switch each on the Features page. What each feature does when features.nix does not
+# mention it, and which roles lack it, is in `vexportal_ops::features`.
 
 [[feature]]
 name = "gaming"
@@ -109,7 +109,6 @@ description = "libvirtd, QEMU/KVM and GNOME Boxes."
 name = "sunshine"
 title = "Game Streaming"
 description = "Sunshine, a self-hosted Moonlight game-stream host."
-default_on = true
 
 [[feature]]
 name = "vpn"
@@ -124,7 +123,7 @@ description = "Boot a custom kernel from the VexOS kernel registry."
 [[feature]]
 name = "ai"
 title = "AI Assistant"
-description = "Claude Code, set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
+description = "An AI assistant (Claude Code, Codex or OpenCode), set up to change and troubleshoot VexOS. You apply its changes with a rebuild."
 
 # ─────────────────────────────── AI Assistant ───────────────────────────────
 #
@@ -137,7 +136,7 @@ id = "agent"
 command = ["agent"]
 implements = "agent"
 title = "Open AI Assistant"
-blurb = "Start Claude Code in /etc/nixos to change or troubleshoot this machine."
+blurb = "Start your AI assistant (Claude Code, Codex or OpenCode) in /etc/nixos to change or troubleshoot this machine."
 icon = "user-available-symbolic"
 page = "ai"
 group = "Assistant"
@@ -172,7 +171,7 @@ id = "ai-pick"
 command = ["ai-pick"]
 implements = "ai-pick"
 title = "Choose AI Assistant"
-blurb = "Use Claude Code as your assistant."
+blurb = "Choose Claude Code, Codex or OpenCode as your assistant."
 icon = "user-available-symbolic"
 page = "ai"
 group = "Assistant"
@@ -186,7 +185,7 @@ mode_reason = "The choice is saved in your own settings."
   label = "Assistant"
   required = true
   widget = "choice"
-  choices = ["claude"]
+  choices = ["claude", "codex", "opencode"]
 
 [[action]]
 id = "ai-crash-mute"
@@ -456,11 +455,12 @@ risk = "medium"
 confirm = "This machine powers off immediately. Unsaved work in other applications is lost."
 
 # ─────────────────────────────── Features ───────────────────────────────
-# `_require-desktop-role` refuses these on stateless and headless-server, because
-# neither role wires /etc/nixos/features.nix into its module set.
+# Only the desktop, htpc and server wrappers import /etc/nixos/features.nix, so these
+# actions exist for those roles alone.
 
 [[action]]
 id = "feature-list"
+backend = "native"
 command = ["feature", "list"]
 implements = "_feature-list"
 title = "List Features"
@@ -468,11 +468,12 @@ blurb = "Show which optional feature modules are enabled on this host."
 icon = "view-list-symbolic"
 page = "features"
 group = "Advanced"
-roles = ["desktop", "htpc", "server", "vanilla"]
+roles = ["desktop", "htpc", "server"]
 risk = "safe"
 
 [[action]]
 id = "feature-enable"
+backend = "native"
 command = ["feature", "enable"]
 implements = "_feature-enable"
 title = "Enable Feature"
@@ -480,7 +481,7 @@ blurb = "Turn on an optional feature module. Takes effect on the next rebuild."
 icon = "list-add-symbolic"
 page = "features"
 group = "Advanced"
-roles = ["desktop", "htpc", "server", "vanilla"]
+roles = ["desktop", "htpc", "server"]
 risk = "medium"
 rebuild = true
 
@@ -488,12 +489,12 @@ rebuild = true
   name = "feature"
   label = "Feature"
   required = true
-  widget = "choice-dynamic"
-  source = "features"
-  extra = ["all"]
+  widget = "choice"
+  choices = ["all", "gaming", "development", "print3d", "virtualization", "sunshine", "vpn", "kernel", "ai"]
 
 [[action]]
 id = "feature-disable"
+backend = "native"
 command = ["feature", "disable"]
 implements = "_feature-disable"
 title = "Disable Feature"
@@ -501,7 +502,7 @@ blurb = "Turn off an optional feature module. Takes effect on the next rebuild."
 icon = "list-remove-symbolic"
 page = "features"
 group = "Advanced"
-roles = ["desktop", "htpc", "server", "vanilla"]
+roles = ["desktop", "htpc", "server"]
 risk = "medium"
 rebuild = true
 
@@ -509,12 +510,12 @@ rebuild = true
   name = "feature"
   label = "Feature"
   required = true
-  widget = "choice-dynamic"
-  source = "features"
-  extra = ["all"]
+  widget = "choice"
+  choices = ["all", "gaming", "development", "print3d", "virtualization", "sunshine", "vpn", "kernel", "ai"]
 
 [[action]]
 id = "fix-flake"
+backend = "native"
 command = ["fix-flake"]
 implements = "fix-flake"
 title = "Repair Feature Wiring"
@@ -522,8 +523,10 @@ blurb = "Patch /etc/nixos/flake.nix so it loads features.nix on every rebuild. N
 icon = "applications-engineering-symbolic"
 page = "features"
 group = "Advanced"
-roles = ["desktop", "htpc", "server", "vanilla"]
+roles = ["desktop", "htpc", "server"]
 risk = "medium"
+confirm = "This edits /etc/nixos/flake.nix so it loads features.nix. The existing file is kept as flake.nix.bak, and the change is checked to be valid Nix before it is written."
+rebuild = true
 
 # ─────────────────────────────── VPN & Network ───────────────────────────────
 # The VPN actions wrap the vexos-vpn CLI, installed by the `vpn` feature (desktop,

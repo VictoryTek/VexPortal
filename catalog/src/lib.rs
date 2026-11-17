@@ -317,9 +317,6 @@ pub struct Feature {
     pub name: String,
     pub title: String,
     pub description: String,
-    /// The module default when features.nix does not mention the feature.
-    #[serde(default)]
-    pub default_on: bool,
 }
 
 /// Recipes present in the justfile that the catalog deliberately does not surface.
@@ -584,6 +581,20 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("one parameter"), "{err}");
+    }
+
+    #[test]
+    fn the_feature_actions_offer_exactly_the_catalog_features_and_all() {
+        let catalog = Catalog::load().unwrap();
+        let mut expected: Vec<String> = vec!["all".to_string()];
+        expected.extend(catalog.features.iter().map(|f| f.name.clone()));
+        for id in ["feature-enable", "feature-disable"] {
+            let param = catalog.action(id).unwrap().param("feature").unwrap();
+            let Widget::Choice { choices } = &param.widget else {
+                panic!("`{id}` should offer a fixed list");
+            };
+            assert_eq!(*choices, expected, "`{id}`");
+        }
     }
 
     #[test]

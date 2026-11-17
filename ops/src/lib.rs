@@ -16,6 +16,7 @@
 
 pub mod activate;
 pub mod bootloader;
+pub mod features;
 pub mod fsutil;
 pub mod gitrepo;
 pub mod nixedit;
@@ -69,6 +70,10 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "upgrade-analysis",
     "bootloader-switch",
     "bootloader-cleanup",
+    "feature-list",
+    "feature-enable",
+    "feature-disable",
+    "fix-flake",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -121,6 +126,10 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "upgrade-analysis" => upgrade::analyse(ctx).await,
         "bootloader-switch" => bootloader::switch(ctx).await,
         "bootloader-cleanup" => bootloader::cleanup(ctx).await,
+        "feature-list" => features::list(ctx).await,
+        "feature-enable" => features::enable(ctx).await,
+        "feature-disable" => features::disable(ctx).await,
+        "fix-flake" => features::fix_flake(ctx).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;
@@ -191,9 +200,10 @@ mod tests {
     }
 
     #[test]
-    fn the_system_operations_are_native_and_the_rest_are_not_yet() {
+    fn the_system_and_feature_operations_are_native_and_the_rest_are_not_yet() {
         assert!(is_native("switch"));
-        assert!(!is_native("feature-enable"));
+        assert!(is_native("feature-enable"));
+        assert!(!is_native("service-restart"));
         assert!(!is_query("feature-list"));
     }
 

@@ -1431,6 +1431,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "vexportal-catalog",
+ "vexportal-ops",
  "vte4",
  "zbus",
 ]

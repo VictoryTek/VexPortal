@@ -317,12 +317,12 @@ mod tests {
     fn menu_actions_prefix_their_command() {
         let inv = build(
             &catalog(),
-            "feature-enable",
-            &answers(&[("feature", "gaming")]),
+            "service-restart",
+            &answers(&[("service", "plex")]),
         )
         .unwrap();
-        assert_eq!(inv.just_args(), ["feature", "enable", "gaming"]);
-        assert_eq!(inv.audit_line(), "just feature enable gaming");
+        assert_eq!(inv.just_args(), ["service", "restart", "plex"]);
+        assert_eq!(inv.audit_line(), "just service restart plex");
     }
 
     /// A recipe-backed action with three parameters, the middle one optional.
@@ -502,8 +502,8 @@ widget = \"text\"
     fn recipe_actions_still_audit_as_just_commands() {
         let inv = build(
             &catalog(),
-            "feature-enable",
-            &answers(&[("feature", "gaming")]),
+            "service-restart",
+            &answers(&[("service", "plex")]),
         )
         .unwrap();
         assert_eq!(inv.backend, Backend::Recipe);

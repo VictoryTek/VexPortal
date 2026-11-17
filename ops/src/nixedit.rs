@@ -160,6 +160,15 @@ pub fn is_set(text: &str, opt: &str, value: &NixValue) -> bool {
     }
 }
 
+/// The boolean in an uncommented `opt = true;` or `opt = false;` line, if there is one.
+pub fn get_bool(text: &str, opt: &str) -> Option<bool> {
+    match value_of(text, opt)? {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
 /// Undo the escapes [`quote`] writes.
 fn unquote(inner: &str) -> String {
     let mut out = String::with_capacity(inner.len());

@@ -480,6 +480,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_catalog_features_and_the_ops_feature_table_list_the_same_features() {
+        let catalog = Catalog::load().unwrap();
+        let in_catalog: Vec<&str> = catalog.features.iter().map(|f| f.name.as_str()).collect();
+        let in_ops: Vec<&str> = vexportal_ops::features::FEATURES
+            .iter()
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(in_catalog, in_ops);
+    }
+
     #[tokio::test]
     async fn run_captures_output_and_the_exit_code() {
         let runner = TokioRunner::new(CancellationToken::new());
@@ -670,12 +681,13 @@ mod tests {
         );
     }
 
+    /// An action that is still a recipe, so `execute` finds no native handler for it.
     fn feature_enable() -> Invocation {
         let catalog = Catalog::load().unwrap();
         vexportal_catalog::validate::build(
             &catalog,
-            "feature-enable",
-            &[("feature".to_string(), "gaming".to_string())]
+            "service-restart",
+            &[("service".to_string(), "plex".to_string())]
                 .into_iter()
                 .collect(),
         )
