@@ -9,6 +9,8 @@ description = "Native VexOS operations shared by the VexPortal daemon and GUI: p
 
 [dependencies]
 thiserror.workspace = true
+# flake.lock, for the release the host currently follows.
+serde_json.workspace = true
 # Only the lock that serialises edits to one file; no runtime, so the crate stays
 # usable from any executor.
 tokio = { version = "1", default-features = false, features = ["sync"] }

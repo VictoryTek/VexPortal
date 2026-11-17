@@ -159,10 +159,17 @@ pub mod testing {
         }
     }
 
+    struct Rule {
+        program: String,
+        prefix: Vec<String>,
+        contains: Option<String>,
+        output: Output,
+    }
+
     /// A runner that answers from a script and records what it was asked.
     #[derive(Default)]
     pub struct FakeRunner {
-        rules: Mutex<Vec<(String, Vec<String>, Output)>>,
+        rules: Mutex<Vec<Rule>>,
         calls: Mutex<Vec<Cmd>>,
     }
 
@@ -174,11 +181,24 @@ pub mod testing {
         /// Answer any command for `program` whose arguments start with `prefix`. The
         /// first matching rule wins, so put the specific ones first.
         pub fn on(self, program: &str, prefix: &[&str], output: Output) -> Self {
-            self.rules.lock().unwrap().push((
-                program.to_string(),
-                prefix.iter().map(|s| s.to_string()).collect(),
+            self.rules.lock().unwrap().push(Rule {
+                program: program.to_string(),
+                prefix: prefix.iter().map(|s| s.to_string()).collect(),
+                contains: None,
                 output,
-            ));
+            });
+            self
+        }
+
+        /// Answer any command for `program` that has an argument containing `needle`.
+        /// For telling apart calls whose only difference is inside one long argument.
+        pub fn on_arg(self, program: &str, needle: &str, output: Output) -> Self {
+            self.rules.lock().unwrap().push(Rule {
+                program: program.to_string(),
+                prefix: Vec::new(),
+                contains: Some(needle.to_string()),
+                output,
+            });
             self
         }
 
@@ -213,10 +233,15 @@ pub mod testing {
             let rules = self.rules.lock().unwrap();
             rules
                 .iter()
-                .find(|(program, prefix, _)| {
-                    *program == cmd.program && cmd.args.starts_with(prefix.as_slice())
+                .find(|rule| {
+                    rule.program == cmd.program
+                        && cmd.args.starts_with(rule.prefix.as_slice())
+                        && rule
+                            .contains
+                            .as_ref()
+                            .is_none_or(|needle| cmd.args.iter().any(|a| a.contains(needle)))
                 })
-                .map(|(_, _, output)| output.clone())
+                .map(|rule| rule.output.clone())
                 // An unscripted command is a test that forgot a rule: fail it loudly
                 // rather than pretend it succeeded.
                 .ok_or_else(|| RunError::Spawn {

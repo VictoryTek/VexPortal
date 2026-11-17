@@ -109,7 +109,8 @@ impl JustfileFacts {
     /// nothing is hidden — a failure to introspect the justfile should not empty out
     /// the whole portal.
     pub fn is_available(&self, action: &Action) -> bool {
-        self.available.is_empty()
+        action.is_native()
+            || self.available.is_empty()
             || (self.available.contains(&action.command[0])
                 && self.available.contains(&action.implements))
     }

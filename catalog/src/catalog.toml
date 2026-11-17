@@ -218,6 +218,7 @@ mode_reason = "Mutes are saved in your own settings."
 
 [[action]]
 id = "variant"
+backend = "native"
 command = ["variant"]
 implements = "variant"
 title = "Show Active Variant"
@@ -230,6 +231,7 @@ risk = "safe"
 
 [[action]]
 id = "rebuild"
+backend = "native"
 command = ["rebuild"]
 implements = "rebuild"
 title = "Rebuild System"
@@ -240,8 +242,17 @@ group = "Build"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
 
+  [[action.params]]
+  name = "kernel_cache"
+  label = "Kernel cache check"
+  help = "A custom kernel that is not in the binary cache would be compiled on this machine for hours. Skip the check only to compile it here."
+  default = "check"
+  widget = "choice"
+  choices = ["check", "skip"]
+
 [[action]]
 id = "switch"
+backend = "native"
 command = ["switch"]
 implements = "switch"
 title = "Switch Role or GPU"
@@ -270,12 +281,6 @@ confirm = "This rebuilds the system and changes which role and GPU variant this 
   choices = ["amd", "nvidia", "nvidia-legacy580", "intel", "vm"]
 
   [[action.params]]
-  name = "flake"
-  label = "Flake override"
-  widget = "text"
-  format = "flake-ref"
-
-  [[action.params]]
   name = "de"
   label = "Desktop environment"
   widget = "choice"
@@ -289,6 +294,7 @@ confirm = "This rebuilds the system and changes which role and GPU variant this 
 
 [[action]]
 id = "build"
+backend = "native"
 command = ["build"]
 implements = "build"
 title = "Test Build"
@@ -313,15 +319,9 @@ risk = "safe"
   widget = "choice"
   choices = ["amd", "nvidia", "nvidia-legacy580", "intel", "vm"]
 
-  [[action.params]]
-  name = "flake"
-  label = "Flake override"
-  help = "Leave empty to use the flake this machine is configured with."
-  widget = "text"
-  format = "flake-ref"
-
 [[action]]
 id = "rollback"
+backend = "native"
 command = ["rollback"]
 implements = "rollback"
 title = "Roll Back"
@@ -334,6 +334,7 @@ risk = "medium"
 
 [[action]]
 id = "rollforward"
+backend = "native"
 command = ["rollforward"]
 implements = "rollforward"
 title = "Roll Forward"
@@ -346,6 +347,7 @@ risk = "medium"
 
 [[action]]
 id = "upgrade-analysis"
+backend = "native"
 command = ["upgrade-analysis"]
 implements = "upgrade-analysis"
 title = "Analyse Release Upgrade"
@@ -369,6 +371,7 @@ risk = "safe"
 # machine has demonstrably booted the new one.
 [[action]]
 id = "bootloader-switch"
+backend = "native"
 command = ["bootloader", "switch"]
 implements = "_bootloader-switch"
 title = "Migrate to Limine"
@@ -390,6 +393,7 @@ confirm = "This patches the flake wrapper, rebuilds the system, and makes Limine
 
 [[action]]
 id = "bootloader-cleanup"
+backend = "native"
 command = ["bootloader", "cleanup"]
 implements = "_bootloader-cleanup"
 title = "Finish Limine Migration"
@@ -403,6 +407,7 @@ confirm = "This deletes the systemd-boot fallback entry and its files. It only r
 
 [[action]]
 id = "set-hostname"
+backend = "native"
 command = ["set-hostname"]
 implements = "set-hostname"
 title = "Set Hostname"
@@ -412,6 +417,7 @@ page = "system"
 group = "Identity"
 roles = ["desktop", "htpc", "server", "headless-server", "stateless", "vanilla"]
 risk = "medium"
+rebuild = true
 
   # The justfile prompts when the name is empty, so the form never sends it empty.
   [[action.params]]
@@ -423,6 +429,7 @@ risk = "medium"
 
 [[action]]
 id = "reboot"
+backend = "native"
 command = ["reboot"]
 implements = "reboot"
 title = "Reboot"
@@ -436,6 +443,7 @@ confirm = "This machine restarts immediately. Unsaved work in other applications
 
 [[action]]
 id = "shutdown"
+backend = "native"
 command = ["shutdown"]
 implements = "shutdown"
 title = "Shut Down"

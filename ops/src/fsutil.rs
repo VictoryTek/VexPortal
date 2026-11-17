@@ -95,6 +95,36 @@ pub fn backup(path: &Path) -> io::Result<PathBuf> {
     Ok(target)
 }
 
+/// A private working directory that deletes itself. For a command that writes output
+/// into its working directory, such as the `result` link of `nixos-rebuild build`.
+pub struct Scratch(PathBuf);
+
+impl Scratch {
+    pub fn new() -> io::Result<Self> {
+        use std::os::unix::fs::DirBuilderExt;
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "vexportal-scratch-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        // `create` refuses an existing path, so a directory or link planted at this name
+        // is an error rather than something this writes through.
+        fs::DirBuilder::new().mode(0o700).create(&path)?;
+        Ok(Self(path))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 pub mod testing {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU32, Ordering};

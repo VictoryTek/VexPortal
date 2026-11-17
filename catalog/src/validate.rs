@@ -325,28 +325,76 @@ mod tests {
         assert_eq!(inv.audit_line(), "just feature enable gaming");
     }
 
-    #[test]
-    fn switch_builds_a_positional_argv() {
-        let inv = build(
-            &catalog(),
-            "switch",
-            &answers(&[("role", "desktop"), ("variant", "nvidia")]),
+    /// A recipe-backed action with three parameters, the middle one optional.
+    fn recipe_catalog() -> Catalog {
+        Catalog::parse(
+            "[[page]]
+id = \"p\"
+title = \"P\"
+icon = \"i\"
+
+\n             [[action]]
+id = \"r\"
+command = [\"r\"]
+implements = \"r\"
+title = \"R\"
+blurb = \"b\"
+\n             icon = \"i\"
+page = \"p\"
+group = \"g\"
+roles = [\"desktop\"]
+risk = \"safe\"
+\n             [[action.params]]
+name = \"a\"
+label = \"A\"
+required = true
+widget = \"text\"
+\n             [[action.params]]
+name = \"b\"
+label = \"B\"
+widget = \"text\"
+\n             [[action.params]]
+name = \"c\"
+label = \"C\"
+widget = \"text\"
+",
         )
-        .unwrap();
-        assert_eq!(inv.just_args(), ["switch", "desktop", "nvidia"]);
+        .unwrap()
+    }
+
+    #[test]
+    fn a_recipe_action_builds_a_positional_argv() {
+        let inv = build(&recipe_catalog(), "r", &answers(&[("a", "one")])).unwrap();
+        assert_eq!(inv.just_args(), ["r", "one"]);
         // The trailing optionals are dropped so `just` applies its own defaults.
-        assert_eq!(inv.argv.len(), 2);
+        assert_eq!(inv.argv.len(), 1);
     }
 
     #[test]
     fn interior_optionals_keep_their_position() {
         let inv = build(
-            &catalog(),
-            "switch",
-            &answers(&[("role", "desktop"), ("variant", "amd"), ("de", "cosmic")]),
+            &recipe_catalog(),
+            "r",
+            &answers(&[("a", "one"), ("c", "three")]),
         )
         .unwrap();
-        assert_eq!(inv.just_args(), ["switch", "desktop", "amd", "", "cosmic"]);
+        assert_eq!(inv.just_args(), ["r", "one", "", "three"]);
+    }
+
+    #[test]
+    fn a_native_action_reads_its_answers_by_name() {
+        let inv = build(
+            &catalog(),
+            "switch",
+            &answers(&[("role", "desktop"), ("variant", "nvidia"), ("de", "cosmic")]),
+        )
+        .unwrap();
+        assert_eq!(inv.backend, Backend::Native);
+        assert_eq!(inv.named["de"], "cosmic");
+        assert_eq!(
+            inv.audit_line(),
+            "op switch de=cosmic role=desktop variant=nvidia"
+        );
     }
 
     #[test]

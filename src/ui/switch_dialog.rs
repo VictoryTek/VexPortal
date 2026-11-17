@@ -82,20 +82,12 @@ pub fn present(app: &Rc<App>, window: &Window, mode: Mode) {
     vm_platform.set_subtitle("VirtualBox pins the 6.18 LTS kernel for its guest additions.");
     drop(state);
 
-    let flake = adw::EntryRow::builder().title("Flake override").build();
-    let advanced = adw::ExpanderRow::builder()
-        .title("Advanced")
-        .subtitle("Build from a different flake than this machine's own")
-        .build();
-    advanced.add_row(&flake);
-
     let group = adw::PreferencesGroup::new();
     group.set_description(Some(&action.blurb));
     group.add(&role);
     group.add(&gpu);
     group.add(&desktop);
     group.add(&vm_platform);
-    group.add(&advanced);
 
     let summary = gtk::Label::new(None);
     summary.set_wrap(true);
@@ -181,10 +173,6 @@ pub fn present(app: &Rc<App>, window: &Window, mode: Mode) {
             let mut args = HashMap::new();
             args.insert("role".to_string(), value(&role, &ROLES).to_string());
             args.insert("variant".to_string(), value(&gpu, &GPUS).to_string());
-            let flake = flake.text().trim().to_string();
-            if !flake.is_empty() {
-                args.insert("flake".to_string(), flake);
-            }
             if desktop.is_visible() {
                 args.insert("de".to_string(), value(&desktop, &DESKTOPS).to_string());
             }

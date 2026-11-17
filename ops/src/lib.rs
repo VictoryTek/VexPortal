@@ -14,12 +14,18 @@
 //! destructive confirmations and disk choices as their own job, because a caller on the
 //! bus is not trusted to have asked the GUI first.
 
+pub mod activate;
+pub mod bootloader;
 pub mod fsutil;
 pub mod gitrepo;
 pub mod nixedit;
+pub mod rebuild;
 pub mod runner;
+pub mod sidefile;
+pub mod system;
+pub mod upgrade;
 
-use runner::{Runner, Sink};
+use runner::{Cmd, RunError, Runner, Sink};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -50,7 +56,20 @@ impl std::fmt::Debug for Secret {
 /// The operations this crate implements. The daemon sends these here and every other
 /// action id to the legacy recipe runner until that is removed. Each phase adds its
 /// operations here and to [`run`].
-pub const NATIVE_OPERATIONS: &[&str] = &[];
+pub const NATIVE_OPERATIONS: &[&str] = &[
+    "variant",
+    "reboot",
+    "shutdown",
+    "set-hostname",
+    "rollback",
+    "rollforward",
+    "rebuild",
+    "switch",
+    "build",
+    "upgrade-analysis",
+    "bootloader-switch",
+    "bootloader-cleanup",
+];
 
 /// Read-only operations that answer with JSON instead of starting a job.
 pub const QUERIES: &[&str] = &[];
@@ -69,6 +88,10 @@ pub struct Ctx<'a, R: Runner> {
     /// Where the host's configuration lives: `/etc/nixos`, or a temporary directory in
     /// tests. Operations never build a path from anything the caller sent.
     pub nixos_dir: &'a Path,
+    /// The filesystem root: `/`, or a temporary directory in tests. The fixed system
+    /// paths (`/run/current-system`, the system profile, `/sys/firmware/efi`) hang off
+    /// it, so a test can build a miniature machine.
+    pub root: &'a Path,
     pub sink: &'a dyn Sink,
     /// The validated, non-secret answers.
     pub args: &'a Args,
@@ -85,9 +108,58 @@ pub struct Ctx<'a, R: Runner> {
 /// cancelled: the operation must stop there and return a non-zero code, not carry on
 /// to its next step.
 pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
-    let _ = ctx;
-    debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
-    None
+    Some(match op_id {
+        "variant" => system::variant(ctx),
+        "reboot" => system::reboot(ctx).await,
+        "shutdown" => system::shutdown(ctx).await,
+        "set-hostname" => system::set_hostname(ctx).await,
+        "rollback" => system::rollback(ctx).await,
+        "rollforward" => system::rollforward(ctx).await,
+        "rebuild" => rebuild::rebuild(ctx).await,
+        "switch" => rebuild::switch(ctx).await,
+        "build" => rebuild::build(ctx).await,
+        "upgrade-analysis" => upgrade::analyse(ctx).await,
+        "bootloader-switch" => bootloader::switch(ctx).await,
+        "bootloader-cleanup" => bootloader::cleanup(ctx).await,
+        _ => {
+            debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
+            return None;
+        }
+    })
+}
+
+/// Report a failure to the job log and give the exit code that goes with it.
+pub(crate) fn fail(sink: &dyn Sink, message: impl std::fmt::Display) -> i32 {
+    sink.error(&format!("error: {message}"));
+    1
+}
+
+/// Run a long command with its output in the job log. `Err` is the exit code to stop
+/// with: the command could not start, or the job was cancelled.
+pub(crate) async fn stream<R: Runner>(ctx: &Ctx<'_, R>, cmd: &Cmd) -> Result<i32, i32> {
+    ctx.sink.info(&format!("$ {}", cmd.display()));
+    ctx.runner
+        .stream(cmd, ctx.sink)
+        .await
+        .map_err(|e| run_error(ctx.sink, e))
+}
+
+/// Run a short command and capture it. `Err` as for [`stream`].
+pub(crate) async fn capture<R: Runner>(ctx: &Ctx<'_, R>, cmd: &Cmd) -> Result<runner::Output, i32> {
+    ctx.runner
+        .run(cmd)
+        .await
+        .map_err(|e| run_error(ctx.sink, e))
+}
+
+fn run_error(sink: &dyn Sink, error: RunError) -> i32 {
+    match error {
+        RunError::Cancelled => {
+            sink.error("Cancelled.");
+            1
+        }
+        other => fail(sink, other),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -119,8 +191,9 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_native_until_a_phase_adds_it() {
-        assert!(!is_native("switch"));
+    fn the_system_operations_are_native_and_the_rest_are_not_yet() {
+        assert!(is_native("switch"));
+        assert!(!is_native("feature-enable"));
         assert!(!is_query("feature-list"));
     }
 
@@ -128,5 +201,65 @@ mod tests {
     fn an_unknown_query_is_an_error_not_an_empty_answer() {
         let err = query("nope", Path::new("/nonexistent"), &Args::new()).unwrap_err();
         assert!(matches!(err, QueryError::Unknown(_)));
+    }
+}
+
+/// A miniature machine for the operations' tests.
+#[cfg(test)]
+pub(crate) mod testkit {
+    use super::*;
+    use crate::fsutil::testing::TempDir;
+    use crate::runner::testing::CollectSink;
+    use std::path::PathBuf;
+
+    pub struct Kit {
+        pub root: TempDir,
+        pub nixos: PathBuf,
+        pub sink: CollectSink,
+        pub args: Args,
+        pub secrets: BTreeMap<String, Secret>,
+    }
+
+    impl Kit {
+        pub fn new() -> Self {
+            let root = TempDir::new();
+            let nixos = root.join("etc/nixos");
+            std::fs::create_dir_all(&nixos).unwrap();
+            std::fs::create_dir_all(root.join("run")).unwrap();
+            Self {
+                root,
+                nixos,
+                sink: CollectSink::new(),
+                args: Args::new(),
+                secrets: BTreeMap::new(),
+            }
+        }
+
+        pub fn with_args(mut self, pairs: &[(&str, &str)]) -> Self {
+            self.args = pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            self
+        }
+
+        /// Write a file under the fake `/etc/nixos`.
+        pub fn nixos_file(&self, name: &str, text: &str) -> PathBuf {
+            let path = self.nixos.join(name);
+            std::fs::write(&path, text).unwrap();
+            path
+        }
+
+        pub fn ctx<'a, R: Runner>(&'a self, runner: &'a R) -> Ctx<'a, R> {
+            Ctx {
+                runner,
+                nixos_dir: &self.nixos,
+                root: self.root.path(),
+                sink: &self.sink,
+                args: &self.args,
+                secrets: &self.secrets,
+                caller_uid: None,
+            }
+        }
     }
 }

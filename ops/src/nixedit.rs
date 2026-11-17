@@ -357,6 +357,27 @@ pub async fn edit_file<R: Runner>(
     Err(EditError::Busy)
 }
 
+/// Under the file's lock, replace its content with `replacement` (or remove it, for
+/// `None`) if it still holds exactly `expected`. `Ok(false)` means it has changed and
+/// was left alone. Edits take the same lock, so nothing can slip in between the check
+/// and the write.
+pub async fn replace_if_unchanged(
+    path: &Path,
+    expected: &str,
+    replacement: Option<&str>,
+) -> std::io::Result<bool> {
+    let lock = lock_for(path);
+    let _turn = lock.lock().await;
+    if std::fs::read_to_string(path).ok().as_deref() != Some(expected) {
+        return Ok(false);
+    }
+    match replacement {
+        Some(text) => fsutil::write_atomic(path, text.as_bytes(), fsutil::mode_of(path)?)?,
+        None => std::fs::remove_file(path)?,
+    }
+    Ok(true)
+}
+
 /// [`set`] on a file.
 pub async fn set_in_file<R: Runner>(
     runner: &R,

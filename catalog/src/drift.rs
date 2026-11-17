@@ -193,6 +193,8 @@ pub fn compare(catalog: &Catalog, dump: &JustDump) -> Vec<Drift> {
         if just_recipe.private {
             continue;
         }
+        // A native action that still names its recipe keeps that recipe covered, so the
+        // banner does not call it unlisted while both paths exist.
         let started = catalog
             .actions
             .iter()
@@ -207,7 +209,8 @@ pub fn compare(catalog: &Catalog, dump: &JustDump) -> Vec<Drift> {
     }
 
     let mut missing: Vec<&str> = Vec::new();
-    for action in &catalog.actions {
+    // A native action does not run a recipe, so the justfile has nothing to say about it.
+    for action in catalog.actions.iter().filter(|a| !a.is_native()) {
         // The entry point and the recipe behind it both have to exist.
         for name in [&action.command[0], &action.implements] {
             if !dump.recipes.contains_key(name) && !missing.contains(&name.as_str()) {
@@ -322,15 +325,39 @@ mod tests {
 
     #[test]
     fn notices_a_parameter_that_moved() {
-        let catalog = Catalog::load().unwrap();
+        let catalog = Catalog::parse(
+            "[[page]]\nid = \"p\"\ntitle = \"P\"\nicon = \"i\"\n\n\
+             [[action]]\nid = \"sw\"\ncommand = [\"sw\"]\nimplements = \"sw\"\ntitle = \"S\"\n\
+             blurb = \"b\"\nicon = \"i\"\npage = \"p\"\ngroup = \"g\"\nroles = [\"desktop\"]\n\
+             risk = \"safe\"\n\
+             [[action.params]]\nname = \"role\"\nlabel = \"R\"\nrequired = true\nwidget = \"text\"\n\
+             [[action.params]]\nname = \"variant\"\nlabel = \"V\"\nrequired = true\nwidget = \"text\"\n",
+        )
+        .unwrap();
         let dump = JustDump::parse(
-            r#"{ "recipes": { "switch": { "private": false, "parameters": [
+            r#"{ "recipes": { "sw": { "private": false, "parameters": [
                 { "name": "variant", "default": "" },
                 { "name": "role", "default": "" }
             ]}}}"#,
         )
         .unwrap();
         assert!(compare(&catalog, &dump)
+            .iter()
+            .any(|d| matches!(d, Drift::Parameters { recipe, .. } if recipe == "sw")));
+    }
+
+    #[test]
+    fn a_native_action_is_not_compared_with_the_justfile() {
+        // `switch` is native: a justfile whose `switch` takes different arguments is not
+        // drift, because VexPortal no longer runs that recipe.
+        let catalog = Catalog::load().unwrap();
+        let dump = JustDump::parse(
+            r#"{ "recipes": { "switch": { "private": false, "parameters": [
+                { "name": "variant", "default": "" }
+            ]}}}"#,
+        )
+        .unwrap();
+        assert!(!compare(&catalog, &dump)
             .iter()
             .any(|d| matches!(d, Drift::Parameters { recipe, .. } if recipe == "switch")));
     }

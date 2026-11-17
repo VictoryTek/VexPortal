@@ -233,10 +233,13 @@ pub enum Backend {
 pub struct Action {
     /// Stable identifier: what the GUI asks the daemon for, and the daemon's allowlist.
     pub id: String,
-    /// The argv after `just`, before any parameters — `["feature", "enable"]`.
+    /// The argv after `just`, before any parameters — `["feature", "enable"]`. Only a
+    /// recipe-backed action has one; a native action is named by its id alone.
+    #[serde(default)]
     pub command: Vec<String>,
     /// The justfile recipe that takes the parameters, which the drift check compares
     /// against. For a grouped menu this is the hidden `_<group>-<action>` recipe.
+    #[serde(default)]
     pub implements: String,
     pub title: String,
     pub blurb: String,
@@ -285,7 +288,15 @@ impl Action {
 
     /// `just feature enable`, for headers and messages.
     pub fn command_line(&self) -> String {
-        format!("just {}", self.command.join(" "))
+        if self.is_native() {
+            self.id.clone()
+        } else {
+            format!("just {}", self.command.join(" "))
+        }
+    }
+
+    pub fn is_native(&self) -> bool {
+        self.backend == Backend::Native
     }
 }
 
@@ -373,8 +384,10 @@ impl Catalog {
                     "action `{id}` applies to no role, so nothing could ever show it"
                 ));
             }
-            if action.command.is_empty() {
-                return invalid(format!("action `{id}` has an empty command"));
+            if !action.is_native() && (action.command.is_empty() || action.implements.is_empty()) {
+                return invalid(format!(
+                    "recipe action `{id}` needs a `command` and the recipe it `implements`"
+                ));
             }
             // The UI promises a confirmation before anything destructive, in both
             // lanes; a destructive action without a message would break that promise.
@@ -406,9 +419,10 @@ impl Catalog {
             }
             // A required parameter after an optional one cannot be expressed
             // positionally: `just` would bind the value to the wrong slot.
+            // A native operation reads its answers by name, so order does not matter.
             let mut seen_optional = false;
             for param in &action.params {
-                if param.required && seen_optional {
+                if param.required && seen_optional && !action.is_native() {
                     return invalid(format!(
                         "action `{id}`: required parameter `{}` follows an optional one",
                         param.name
@@ -515,6 +529,34 @@ mod tests {
         let catalog = single("command = [\"a\"]\nrisk = \"safe\"\nbackend = \"native\"\n").unwrap();
         assert_eq!(catalog.actions[0].backend, Backend::Native);
         assert!(single("command = [\"a\"]\nrisk = \"safe\"\nbackend = \"shell\"\n").is_err());
+    }
+
+    #[test]
+    fn a_native_action_needs_no_recipe_but_a_recipe_action_does() {
+        let native = Catalog::parse(
+            "[[page]]\nid = \"p\"\ntitle = \"P\"\nicon = \"i\"\n\n\
+             [[action]]\nid = \"a\"\ntitle = \"A\"\nblurb = \"b\"\nicon = \"i\"\npage = \"p\"\n\
+             group = \"g\"\nroles = [\"desktop\"]\nrisk = \"safe\"\nbackend = \"native\"\n\
+             [[action.params]]\nname = \"p\"\nlabel = \"P\"\nwidget = \"text\"\n\
+             [[action.params]]\nname = \"q\"\nlabel = \"Q\"\nrequired = true\nwidget = \"text\"\n",
+        )
+        .unwrap();
+        assert_eq!(native.actions[0].command_line(), "a");
+
+        let err = Catalog::parse(
+            "[[page]]\nid = \"p\"\ntitle = \"P\"\nicon = \"i\"\n\n\
+             [[action]]\nid = \"a\"\ntitle = \"A\"\nblurb = \"b\"\nicon = \"i\"\npage = \"p\"\n\
+             group = \"g\"\nroles = [\"desktop\"]\nrisk = \"safe\"\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("implements"), "{err}");
+        // A recipe action keeps the positional rule a native one is free of.
+        assert!(single(
+            "command = [\"a\"]\nrisk = \"safe\"\n\
+             [[action.params]]\nname = \"p\"\nlabel = \"P\"\nwidget = \"text\"\n\
+             [[action.params]]\nname = \"q\"\nlabel = \"Q\"\nrequired = true\nwidget = \"text\"\n"
+        )
+        .is_err());
     }
 
     #[test]

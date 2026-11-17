@@ -368,6 +368,7 @@ async fn execute(
     let ctx = vexportal_ops::Ctx {
         runner: &runner,
         nixos_dir: &config.nixos_dir,
+        root: std::path::Path::new("/"),
         sink,
         args: &invocation.named,
         secrets: &secrets,

@@ -9,15 +9,19 @@ const CURRENT_SYSTEM: &str = "/run/current-system";
 const BOOTED_SYSTEM: &str = "/run/booted-system";
 const FEATURES_FILE: &str = "/etc/nixos/features.nix";
 const SERVICES_FILE: &str = "/etc/nixos/server-services.nix";
+const VM_PLATFORM_FILE: &str = "/etc/nixos/vm-platform.nix";
 const FLAKE_LOCK: &str = "/etc/nixos/flake.lock";
 
 /// Files the justfile edits for the next rebuild to pick up. One changed after the
 /// running system was activated means there are changes waiting for a rebuild.
-const REBUILD_INPUTS: [&str; 4] = [
+const REBUILD_INPUTS: [&str; 7] = [
     FEATURES_FILE,
     SERVICES_FILE,
     "/etc/nixos/storage-remote.nix",
     "/etc/nixos/storage-pool.nix",
+    VM_PLATFORM_FILE,
+    "/etc/nixos/hostname.nix",
+    "/etc/nixos/bootloader.nix",
 ];
 
 #[derive(Debug, Clone, Default)]
@@ -39,7 +43,8 @@ pub struct SystemState {
 impl SystemState {
     pub fn read() -> Self {
         let mut settings = Settings::default();
-        for file in [FEATURES_FILE, SERVICES_FILE] {
+        // vm-platform.nix last: it is where a switch writes the hypervisor now.
+        for file in [FEATURES_FILE, SERVICES_FILE, VM_PLATFORM_FILE] {
             match std::fs::read_to_string(file) {
                 Ok(contents) => settings.merge(&contents),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -156,6 +161,21 @@ fn read_generation() -> Option<u32> {
 }
 
 fn reboot_pending() -> bool {
+    // A generation that could not be applied to the running session (graphical <->
+    // headless, a display manager swap) is the next boot entry and leaves a marker in
+    // /run, which the reboot clears. The profile pointing somewhere other than the
+    // running system says the same thing.
+    if Path::new("/run/reboot-required").exists() {
+        return true;
+    }
+    if let (Ok(profile), Ok(running)) = (
+        std::fs::canonicalize(SYSTEM_PROFILE),
+        std::fs::canonicalize(CURRENT_SYSTEM),
+    ) {
+        if profile != running {
+            return true;
+        }
+    }
     let (Ok(booted), Ok(current)) = (
         std::fs::read_link(BOOTED_SYSTEM),
         std::fs::read_link(CURRENT_SYSTEM),
