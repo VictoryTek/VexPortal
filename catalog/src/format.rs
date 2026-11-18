@@ -34,6 +34,15 @@ impl Format {
             Format::NixosVersion => "a NixOS release such as `26.05`",
             Format::FlakeRef => "a path or flake reference such as `.` or `github:owner/repo`",
             Format::ProgramName => "a program name such as `firefox`",
+            Format::Url => "an address starting with http:// or https://",
+            Format::Ipv4 => "an IPv4 address such as `192.168.1.100`",
+            Format::Interface => "a network interface name such as `enp2s0`",
+            Format::Email => "an e-mail address such as `you@example.com`",
+            Format::Domain => "a domain such as `example.com`",
+            Format::Subdomain => "a subdomain such as `home` or `vpn.lab`",
+            Format::ResticRepo => {
+                "a path such as `/mnt/backup/restic-repo`, or an address such as `sftp:user@host:/path`"
+            }
         }
     }
 
@@ -56,14 +65,32 @@ impl Format {
             Format::NixosVersion => is_nixos_version(value),
             Format::FlakeRef => is_flake_ref(value),
             Format::ProgramName => is_program_name(value),
+            Format::Url => is_url(value),
+            Format::Ipv4 => is_ipv4(value),
+            Format::Interface => is_interface(value),
+            Format::Email => is_email(value),
+            Format::Domain => is_domain(value),
+            Format::Subdomain => is_subdomain(value),
+            Format::ResticRepo => is_restic_repo(value),
         };
 
         if ok {
             Ok(())
         } else {
+            // A password inside a repository address must not be echoed back into an
+            // error, a log or the audit trail.
+            let got = if self == Format::ResticRepo && has_credentials(value) {
+                "<hidden>".to_string()
+            } else {
+                value.to_string()
+            };
             Err(FormatError::Malformed {
-                expected: self.expectation(),
-                got: value.to_string(),
+                expected: if got == "<hidden>" {
+                    "an address without a password in it (restic reads one from the password file)"
+                } else {
+                    self.expectation()
+                },
+                got,
             })
         }
     }
@@ -144,9 +171,239 @@ fn is_program_name(v: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
 }
 
+/// What follows `http://` or `https://`: only characters that are safe inside a Nix
+/// string and a URL, so no space, quote, backslash, `$` or `;`.
+fn is_url(v: &str) -> bool {
+    let Some(rest) = v
+        .strip_prefix("https://")
+        .or_else(|| v.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '[')
+        && rest.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(
+                    c,
+                    '.' | '_'
+                        | '~'
+                        | ':'
+                        | '/'
+                        | '?'
+                        | '#'
+                        | '@'
+                        | '%'
+                        | '+'
+                        | '='
+                        | '&'
+                        | ','
+                        | '['
+                        | ']'
+                        | '-'
+                )
+        })
+}
+
+fn is_ipv4(v: &str) -> bool {
+    let parts: Vec<&str> = v.split('.').collect();
+    parts.len() == 4
+        && parts.iter().all(|p| {
+            !p.is_empty()
+                && p.len() <= 3
+                && p.chars().all(|c| c.is_ascii_digit())
+                && p.parse::<u16>().is_ok_and(|n| n <= 255)
+        })
+}
+
+fn is_interface(v: &str) -> bool {
+    // The kernel allows 15 characters; at least two, starting with a letter.
+    v.len() >= 2
+        && v.len() <= 15
+        && v.starts_with(|c: char| c.is_ascii_alphabetic())
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '.' | '_' | '-'))
+}
+
+fn is_email(v: &str) -> bool {
+    let Some((local, domain)) = v.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && local
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-'))
+        && is_domain(domain)
+}
+
+fn is_label(v: &str) -> bool {
+    !v.is_empty()
+        && v.len() <= 63
+        && v.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && v.ends_with(|c: char| c.is_ascii_alphanumeric())
+        && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+fn is_domain(v: &str) -> bool {
+    let labels: Vec<&str> = v.split('.').collect();
+    labels.len() >= 2
+        && labels.iter().all(|l| is_label(l))
+        && labels
+            .last()
+            .is_some_and(|tld| tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic()))
+}
+
+fn is_subdomain(v: &str) -> bool {
+    v.split('.').all(is_label)
+}
+
+/// `scheme://user:password@host/...`: a secret in the address.
+fn has_credentials(v: &str) -> bool {
+    let Some((_, rest)) = v.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split('/').next().unwrap_or("");
+    // The last `@` ends the user info, as in Go's URL parser, so an `@` inside the user
+    // name cannot hide the `:` before the password.
+    authority
+        .rsplit_once('@')
+        .is_some_and(|(userinfo, _)| userinfo.contains(':'))
+}
+
+fn is_restic_repo(v: &str) -> bool {
+    if has_credentials(v) {
+        return false;
+    }
+    if v.starts_with('/') {
+        return is_abs_path(v) && !v.contains(char::is_whitespace);
+    }
+    let Some((backend, rest)) = v.split_once(':') else {
+        return false;
+    };
+    matches!(
+        backend,
+        "sftp" | "rest" | "s3" | "b2" | "azure" | "gs" | "rclone" | "swift"
+    ) && !rest.is_empty()
+        && rest.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(
+                    c,
+                    '.' | '_' | '~' | ':' | '/' | '@' | '%' | '+' | '=' | ',' | '-'
+                )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_service_answer_formats() {
+        for ok in [
+            "http://localhost:8080",
+            "https://wishlist.example.org/a?b=c#d",
+        ] {
+            assert!(Format::Url.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "ftp://x",
+            "localhost",
+            "http://",
+            "http://a b",
+            "http://a\"b",
+            "http://a;b",
+            "http://a$b",
+            "http://a\\b",
+        ] {
+            assert!(Format::Url.validate(bad).is_err(), "{bad}");
+        }
+
+        assert!(Format::Ipv4.validate("192.168.1.100").is_ok());
+        for bad in [
+            "1.2.3",
+            "1.2.3.4.5",
+            "256.1.1.1",
+            "1.2.3.x",
+            "1..2.3",
+            "01234.1.1.1",
+        ] {
+            assert!(Format::Ipv4.validate(bad).is_err(), "{bad}");
+        }
+
+        for ok in ["enp2s0", "eth0", "bond0", "br-lan", "eno1.100"] {
+            assert!(Format::Interface.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["e", "0eth", "a/b", "a b", "this-name-is-too-long"] {
+            assert!(Format::Interface.validate(bad).is_err(), "{bad}");
+        }
+
+        assert!(Format::Email.validate("me+tag@mail.example.com").is_ok());
+        for bad in [
+            "me",
+            "@example.com",
+            "me@example",
+            "me@@example.com",
+            "me@exa mple.com",
+        ] {
+            assert!(Format::Email.validate(bad).is_err(), "{bad}");
+        }
+
+        assert!(Format::Domain.validate("example.com").is_ok());
+        assert!(Format::Domain.validate("a-b.example.co.uk").is_ok());
+        for bad in [
+            "example",
+            "-a.com",
+            "a.c",
+            "a..com",
+            "http://a.com",
+            "a.com/x",
+        ] {
+            assert!(Format::Domain.validate(bad).is_err(), "{bad}");
+        }
+
+        assert!(Format::Subdomain.validate("home").is_ok());
+        assert!(Format::Subdomain.validate("vpn.lab").is_ok());
+        for bad in ["-a", "a.", ".a", "a_b", "a b"] {
+            assert!(Format::Subdomain.validate(bad).is_err(), "{bad}");
+        }
+
+        for ok in [
+            "/var/lib/vexos-backup/restic-repo",
+            "sftp:user@host:/srv/restic",
+            "rest:https://host:8000/repo",
+            "s3:s3.amazonaws.com/bucket",
+        ] {
+            assert!(Format::ResticRepo.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "relative/repo",
+            "ftp:host/x",
+            "sftp:",
+            "/a/../b",
+            "/has space",
+            "sftp:host:/a b",
+            "sftp:host:/a;b",
+        ] {
+            assert!(Format::ResticRepo.validate(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_repository_address_cannot_carry_a_password_and_the_error_does_not_repeat_it() {
+        let err = Format::ResticRepo
+            .validate("rest:https://user:hunter2@host:8000/repo")
+            .unwrap_err();
+        assert!(!err.to_string().contains("hunter2"), "{err}");
+        assert!(!format!("{err:?}").contains("hunter2"), "{err:?}");
+        let err = Format::ResticRepo
+            .validate("rest:https://backup@example.com:hunter2@host/repo")
+            .unwrap_err();
+        assert!(!err.to_string().contains("hunter2"), "{err}");
+        // A user name alone is fine, and so is sftp's `user@host`.
+        assert!(Format::ResticRepo
+            .validate("rest:https://user@host:8000/repo")
+            .is_ok());
+        assert!(Format::ResticRepo.validate("sftp:me@nas:/backups").is_ok());
+    }
 
     #[test]
     fn slugs() {
@@ -179,6 +436,13 @@ mod tests {
                 Format::NixosVersion,
                 Format::FlakeRef,
                 Format::ProgramName,
+                Format::Url,
+                Format::Ipv4,
+                Format::Interface,
+                Format::Email,
+                Format::Domain,
+                Format::Subdomain,
+                Format::ResticRepo,
             ] {
                 assert!(
                     format.validate(probe).is_err(),

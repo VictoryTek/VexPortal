@@ -38,6 +38,8 @@ pub struct SystemState {
     pub settings: Settings,
     /// The text of features.nix, read with the same code the daemon edits it with.
     pub features_text: String,
+    /// The text of server-services.nix, for the same reason.
+    pub services_text: String,
     /// How long since the newest flake input was updated.
     pub lock_age: Option<Duration>,
 }
@@ -51,6 +53,13 @@ impl SystemState {
             &self.features_text,
             feature,
         ))
+    }
+
+    /// Whether a server service is on, by the same rule the daemon applies. `false` for a
+    /// name that is not a service.
+    pub fn service_enabled(&self, name: &str) -> bool {
+        vexportal_ops::services::find(name)
+            .is_some_and(|s| vexportal_ops::services::is_enabled(&self.services_text, s))
     }
 
     pub fn read() -> Self {
@@ -70,6 +79,7 @@ impl SystemState {
             rebuild_needed: rebuild_needed(),
             settings,
             features_text: std::fs::read_to_string(FEATURES_FILE).unwrap_or_default(),
+            services_text: std::fs::read_to_string(SERVICES_FILE).unwrap_or_default(),
             lock_age: read_lock_age(),
         }
     }
@@ -126,11 +136,6 @@ impl Settings {
 
     fn is_true(&self, key: &str) -> Option<bool> {
         self.get(key).map(|v| v == "true")
-    }
-
-    pub fn service_enabled(&self, name: &str) -> bool {
-        self.is_true(&format!("vexos.server.{name}.enable"))
-            .unwrap_or(false)
     }
 
     pub fn plex_pass(&self) -> bool {
@@ -277,14 +282,23 @@ mod tests {
 
     #[test]
     fn services_and_plex_pass() {
-        let s = settings(
-            "  vexos.server.plex.enable = true;\n  vexos.server.plex.plexPass = true;\n\
-             vexos.server.jellyfin.enable = false;\n",
+        let text = "  vexos.server.plex.enable = true;\n  vexos.server.plex.plexPass = true;\n\
+                    vexos.server.jellyfin.enable = false;\n  vexos.server.arr.enable = true;\n";
+        let state = SystemState {
+            services_text: text.to_string(),
+            settings: settings(text),
+            ..Default::default()
+        };
+        assert!(state.service_enabled("plex"));
+        assert!(!state.service_enabled("jellyfin"));
+        assert!(!state.service_enabled("immich"));
+        assert!(!state.service_enabled("not-a-service"));
+        assert!(
+            state.service_enabled("sonarr"),
+            "the arr meta flag turns the first five on"
         );
-        assert!(s.service_enabled("plex"));
-        assert!(!s.service_enabled("jellyfin"));
-        assert!(!s.service_enabled("immich"));
-        assert!(s.plex_pass());
+        assert!(!state.service_enabled("qbittorrent"));
+        assert!(state.settings.plex_pass());
     }
 
     #[test]

@@ -681,73 +681,15 @@ roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
 risk = "medium"
 
 # ─────────────────────────────── Services ───────────────────────────────
-# `_require-server-role` gates these on a variant containing "server", which covers
-# both the GUI server and headless-server roles.
+# These need a server role (server or headless-server); the daemon checks that itself.
 
-[[action]]
-id = "service-list"
-command = ["service", "list"]
-implements = "_service-list"
-title = "Access Info for All Services"
-blurb = "Ports, URLs and setup notes for every enabled service."
-icon = "dialog-information-symbolic"
-page = "services"
-group = "Overview"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-[[action]]
-id = "service-available"
-command = ["service", "available"]
-implements = "_service-available"
-title = "Service Catalog"
-blurb = "Every server service module VexOS can enable, whether or not it runs here."
-icon = "view-grid-symbolic"
-page = "services"
-group = "Overview"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-[[action]]
-id = "service-info"
-command = ["service", "info"]
-implements = "_service-info"
-title = "Access Info"
-blurb = "Ports, URLs and setup notes for this service."
-icon = "dialog-information-symbolic"
-page = "services"
-group = "Service"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-  [[action.params]]
-  name = "service"
-  label = "Service"
-  help = "Leave empty for every enabled service."
-  widget = "choice-dynamic"
-  source = "server-services"
-
-[[action]]
-id = "service-status"
-command = ["service", "status"]
-implements = "_service-status"
-title = "Check Status"
-blurb = "Its systemd status, and whether it answers over HTTP."
-icon = "task-due-symbolic"
-page = "services"
-group = "Service"
-roles = ["server", "headless-server"]
-risk = "safe"
-
-  [[action.params]]
-  name = "service"
-  label = "Service"
-  required = true
-  widget = "choice-dynamic"
-  source = "server-services"
+# Status, access info and the service list are shown on the Services page itself, not run
+# as actions. Turning a service on or off, restarting it and the Plex Pass switch are
+# native: the daemon edits server-services.nix or restarts the units.
 
 [[action]]
 id = "service-restart"
+backend = "native"
 command = ["service", "restart"]
 implements = "_service-restart"
 title = "Restart"
@@ -765,20 +707,22 @@ risk = "medium"
   widget = "choice-dynamic"
   source = "server-services"
 
+# Which of the answers apply depends on the service: the Services page asks only for
+# its own (see `vexportal_ops::services::questions`) and the daemon refuses an enable
+# that lacks one it needs. All are optional here for that reason.
 [[action]]
 id = "service-enable"
+backend = "native"
 command = ["service", "enable"]
 implements = "_service-enable"
 title = "Enable"
-blurb = "Turn this service module on. Several services ask setup questions first. Takes effect on the next rebuild."
+blurb = "Turn this service module on. Takes effect on the next rebuild."
 icon = "list-add-symbolic"
 page = "services"
 group = "Service"
 roles = ["server", "headless-server"]
 risk = "medium"
 rebuild = true
-mode = "terminal"
-mode_reason = "Setup asks follow-up questions — storage, IP addresses, which parts of a stack to install."
 
   [[action.params]]
   name = "service"
@@ -787,8 +731,86 @@ mode_reason = "Setup asks follow-up questions — storage, IP addresses, which p
   widget = "choice-dynamic"
   source = "server-services"
 
+  [[action.params]]
+  name = "plex_pass"
+  label = "Plex Pass"
+  widget = "choice"
+  choices = ["yes", "no"]
+
+  [[action.params]]
+  name = "ip_address"
+  label = "This server's IP address"
+  widget = "text"
+  format = "ipv4"
+
+  [[action.params]]
+  name = "bridge_nic"
+  label = "Network card for the bridge"
+  widget = "text"
+  format = "interface"
+
+  [[action.params]]
+  name = "repository"
+  label = "Restic repository"
+  widget = "text"
+  format = "restic-repo"
+
+  [[action.params]]
+  name = "password_file"
+  label = "Password file"
+  widget = "text"
+  format = "abs-path"
+
+  [[action.params]]
+  name = "admin_email"
+  label = "Admin e-mail"
+  widget = "text"
+  format = "email"
+
+  [[action.params]]
+  name = "zone"
+  label = "Cloudflare zone"
+  widget = "text"
+  format = "domain"
+
+  [[action.params]]
+  name = "subdomain"
+  label = "Subdomain"
+  widget = "text"
+  format = "subdomain"
+
+  [[action.params]]
+  name = "proxied"
+  label = "Proxy through Cloudflare"
+  widget = "choice"
+  choices = ["yes", "no"]
+
+  [[action.params]]
+  name = "api_token"
+  label = "API token"
+  widget = "secret"
+
+  [[action.params]]
+  name = "serial_port"
+  label = "Zigbee coordinator"
+  widget = "text"
+  format = "abs-path"
+
+  [[action.params]]
+  name = "public_url"
+  label = "Public URL"
+  widget = "text"
+  format = "url"
+
+  [[action.params]]
+  name = "with_backup"
+  label = "Also turn on backups"
+  widget = "choice"
+  choices = ["yes", "no"]
+
 [[action]]
 id = "service-disable"
+backend = "native"
 command = ["service", "disable"]
 implements = "_service-disable"
 title = "Disable"
@@ -808,7 +830,37 @@ rebuild = true
   source = "server-services"
 
 [[action]]
+id = "service-set-url"
+backend = "native"
+command = ["service", "set-url"]
+implements = "_service-set-url"
+title = "Set Public URL"
+blurb = "The address people type to reach this service, for use behind a reverse proxy. Takes effect on the next rebuild."
+icon = "web-browser-symbolic"
+page = "services"
+group = "Service"
+roles = ["server", "headless-server"]
+risk = "medium"
+rebuild = true
+
+  [[action.params]]
+  name = "service"
+  label = "Service"
+  required = true
+  widget = "choice-dynamic"
+  source = "server-services"
+
+  [[action.params]]
+  name = "url"
+  label = "Public URL"
+  help = "For example https://wishlist.example.org"
+  required = true
+  widget = "text"
+  format = "url"
+
+[[action]]
 id = "plex-pass-enable"
+backend = "native"
 command = ["plex-pass", "enable"]
 implements = "_plex-pass-enable"
 title = "Enable Plex Pass Transcoding"
@@ -822,6 +874,7 @@ rebuild = true
 
 [[action]]
 id = "plex-pass-disable"
+backend = "native"
 command = ["plex-pass", "disable"]
 implements = "_plex-pass-disable"
 title = "Disable Plex Pass Transcoding"

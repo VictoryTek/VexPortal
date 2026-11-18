@@ -1,0 +1,865 @@
+# The server services VexOS can turn on: what they are, which systemd units they run,
+# where to reach them, and what to know before using them.
+#
+# One table per service, in the order the Services page lists them. `notes` are
+# "Label: text" lines shown on the service's page; `<server-ip>` stands for this host.
+# `option` is the path under `vexos.server.` when it is not the service name, and
+# `units` / `health` feed the status view (a unit that does not exist is skipped, so a
+# docker- and a podman- unit can both be listed).
+#
+# Keep in sync with modules/server/*.nix in vexos-nix. VexPortal does not read the
+# justfile for this any more, so a service added there needs a line here.
+
+# ── Books & Reading ──────────────────────────────────────────────────────────
+
+[[service]]
+name = "chaptarr"
+group = "Books & Reading"
+description = "Audiobook & ebook collection manager (Readarr successor)"
+units = ["docker-chaptarr"]
+health = ["http://localhost:8789"]
+notes = [
+  "Web UI: http://<server-ip>:8789",
+  "About: Audiobook and ebook collection manager (a re-work of Readarr). One container, SQLite under vexos.server.chaptarr.dataDir.",
+  "Prowlarr: Add it as a Readarr-type application (the API is compatible).",
+  "Note: Beta upstream. Put root folders and downloads under /data (vexos.server.chaptarr.libraryDir) so imports can hardlink.",
+]
+
+[[service]]
+name = "grimmory"
+group = "Books & Reading"
+description = "Self-hosted ebook/comic/audiobook library"
+units = ["docker-grimmory", "docker-grimmory-db"]
+health = ["http://localhost:6060"]
+notes = [
+  "Web UI: http://<server-ip>:6060",
+  "About: Digital library for ebooks, comics and audiobooks. Two containers: the app and its own MariaDB.",
+  "Login: Create the admin account on first visit. There are no default credentials.",
+  "Note: Drop files in vexos.server.grimmory.bookdropDir to import them into vexos.server.grimmory.libraryDir.",
+]
+
+[[service]]
+name = "listenarr"
+group = "Books & Reading"
+description = "Audiobook collection manager (Sonarr/Radarr-style)"
+units = ["docker-listenarr"]
+health = ["http://localhost:4545"]
+notes = [
+  "Web UI: http://<server-ip>:4545",
+  "About: Audiobook collection manager in the style of Sonarr and Radarr. One container.",
+  "Note: Upstream publishes only rolling canary builds.",
+]
+
+# ── Files & Storage ──────────────────────────────────────────────────────────
+
+[[service]]
+name = "immich"
+group = "Files & Storage"
+description = "Self-hosted photo & video backup"
+tier = "zfs-live"
+units = ["immich-server"]
+health = ["http://localhost:2283"]
+notes = [
+  "Web UI: http://<server-ip>:2283",
+  "About: Photo and video backup (a Google Photos alternative) with mobile apps and face recognition.",
+  "Note: Install the Immich mobile app and point it at http://<server-ip>:2283.",
+]
+
+[[service]]
+name = "nextcloud"
+group = "Files & Storage"
+description = "File sync, sharing & collaboration suite"
+tier = "zfs-live"
+units = ["phpfpm-nextcloud", "nginx"]
+health = ["http://localhost:80"]
+notes = [
+  "Web UI: http://nextcloud.local (Nginx frontend)",
+  "Login: admin, with the password in /etc/nixos/secrets/nextcloud-admin-pass (vexos.server.nextcloud.adminPassFile).",
+  "About: File sync, calendar (CalDAV) and contacts (CardDAV). A Google Drive or OneDrive alternative.",
+  "Note: Add a DNS entry or /etc/hosts record that points nextcloud.local at this server.",
+  "CLI: sudo -u nextcloud nextcloud-occ",
+]
+
+[[service]]
+name = "photoprism"
+group = "Files & Storage"
+description = "AI-powered photo management & sharing"
+tier = "zfs-live"
+units = ["docker-photoprism"]
+health = ["http://localhost:2342"]
+notes = [
+  "Web UI: http://<server-ip>:2342",
+  "About: Photo library with face recognition, geo-tagging and albums.",
+  "Login: Default admin / insecure. Change it right after the first login.",
+]
+
+[[service]]
+name = "syncthing"
+group = "Files & Storage"
+description = "Continuous peer-to-peer file synchronisation"
+tier = "zfs-live"
+units = ["syncthing"]
+health = ["http://localhost:8384"]
+notes = [
+  "Web UI: http://<server-ip>:8384 (or http://localhost:8384 on the server)",
+  "About: Peer-to-peer file sync for the nimda user. No cloud in between.",
+  "Note: Add other devices by exchanging device IDs in the web UI.",
+]
+
+# ── Gaming ───────────────────────────────────────────────────────────────────
+
+[[service]]
+name = "papermc"
+group = "Gaming"
+description = "High-performance Minecraft Java server"
+units = ["minecraft-server"]
+notes = [
+  "Port: 25565 (Minecraft Java, TCP and UDP). Open it in your firewall or router for outside access.",
+  "Connect: Minecraft Java Edition, Multiplayer, Add Server, <server-ip>:25565.",
+  "About: PaperMC, a Spigot fork with plugin support.",
+  "Files: /var/lib/minecraft/ holds server.properties, world/, plugins/ and logs/.",
+  "Memory: Defaults to 2G. Set vexos.server.papermc.memory in server-services.nix to change it.",
+  "Console: Enable RCON in server.properties (enable-rcon=true, rcon.port=25575, rcon.password), then connect with mcrcon.",
+  "Logs: journalctl -fu minecraft-server",
+]
+
+# ── Infrastructure ───────────────────────────────────────────────────────────
+
+[[service]]
+name = "arcane"
+group = "Infrastructure"
+description = "Web UI for managing Docker/Podman containers"
+units = ["docker-arcane", "podman-arcane"]
+health = ["http://localhost:3552"]
+public_url = { option = "appUrl", port = 3552, host = "localhost", required = false }
+notes = [
+  "Web UI: http://<server-ip>:3552 (Docker/Podman container manager)",
+  "Login: Default arcane / arcane-admin. You are asked to change the password on first login.",
+  "About: Browse containers, images, volumes and networks from a browser.",
+  "Backend: vexos.server.arcane.backend is docker (the default, which turns Docker on) or podman (turn Podman on first).",
+  "Note: The environment file with ENCRYPTION_KEY and JWT_SECRET is generated for you. Behind a reverse proxy, set the public URL.",
+]
+
+[[service]]
+name = "attic"
+group = "Infrastructure"
+description = "Self-hosted Nix binary cache server"
+units = ["atticd"]
+health = ["http://localhost:8400"]
+notes = [
+  "HTTP: http://<server-ip>:8400 (Nix binary cache)",
+  "About: A purpose-built Nix binary cache. Push from any machine, pull on rebuild.",
+  "Note: Credentials and the attic CLI are set up on rebuild.",
+  "Next: After rebuilding, bootstrap the cache to create it and mint tokens.",
+]
+
+[[service]]
+name = "backup"
+group = "Infrastructure"
+description = "Declarative restic backups of enabled services"
+units = ["restic-backups-main"]
+notes = [
+  "Service: restic-backups-main.service",
+  "About: Daily restic backup of every enabled service's data directory, plus a PostgreSQL dump if services.postgresql is on.",
+  "Run now: Use Run Backup Now on the Storage page.",
+  "Restore: Restore a Service on the Storage page, one service at a time, in place.",
+  "Inspect: restic-main snapshots --tag <service>",
+]
+
+[[service]]
+name = "caddy"
+group = "Infrastructure"
+description = "Automatic HTTPS web server & reverse proxy"
+units = ["caddy"]
+health = ["http://localhost:8880"]
+notes = [
+  "Ports: :8880 (redirects to HTTPS), :8443",
+  "About: Reverse proxy with automatic HTTPS from Let's Encrypt. Configure virtual hosts in the module or a Caddyfile.",
+]
+
+[[service]]
+name = "cloudflare-ddns"
+group = "Infrastructure"
+description = "Cloudflare dynamic DNS updater (keeps a record on this host's public IP)"
+units = ["docker-cloudflare-ddns"]
+notes = [
+  "About: Keeps a Cloudflare DNS record pointed at this host's public IP, checked every 5 minutes by default.",
+  "Secret: The API token is stored in /etc/nixos/secrets/cloudflare-ddns-env (0600).",
+  "Token: It needs Zone:DNS:Edit on your zone (Cloudflare, My Profile, API Tokens).",
+]
+
+[[service]]
+name = "docker"
+group = "Infrastructure"
+description = "Container runtime (Docker Engine)"
+units = ["docker"]
+notes = [
+  "No web UI: use the docker and docker compose commands.",
+  "About: Docker Engine with Compose, plus a weekly docker system prune timer.",
+  "Note: The nimda user is added to the docker group.",
+]
+
+[[service]]
+name = "dockhand"
+group = "Infrastructure"
+description = "Web UI for managing Docker/Podman containers"
+units = ["docker-dockhand", "podman-dockhand"]
+health = ["http://localhost:8073"]
+notes = [
+  "Web UI: http://<server-ip>:8073 (Docker/Podman container manager)",
+  "About: Browse containers, Compose stacks, logs and terminals from a browser.",
+  "Backend: vexos.server.dockhand.backend is docker (the default, which turns Docker on) or podman (turn Podman on first).",
+  "Note: The port is remapped from upstream's 3000, which Forgejo also uses.",
+]
+
+[[service]]
+name = "harmonia"
+group = "Infrastructure"
+description = "Nix binary cache serving this host's store"
+units = ["harmonia"]
+health = ["http://localhost:5000"]
+notes = [
+  "HTTP: http://<server-ip>:5000 (Nix binary cache)",
+  "About: Serves this host's /nix/store as a binary cache. Read-only: paths appear by being built here, or copied in with nix copy --to ssh-ng://<this-host> <path>.",
+  "Note: The signing key is generated on rebuild.",
+  "Next: Check it is live and get the client settings for your other machines with the Harmonia check on the Cache page.",
+  "Warning: It serves every store path on this host. Keep it on your LAN.",
+]
+
+[[service]]
+name = "kernel-builder"
+group = "Infrastructure"
+description = "Builds custom kernels for Harmonia to serve"
+option = "kernelBuilder"
+units = ["kernel-build-ogc"]
+notes = [
+  "Service: kernel-build-<name>.service, one per configured kernel.",
+  "Timer: Nightly at 01:00 by default.",
+  "About: Builds the custom kernels in pkgs/kernels/ so other machines download them from this host instead of compiling.",
+  "Requires: Harmonia. Building without serving does nothing.",
+  "First run: The first build takes hours and is safe to leave.",
+]
+
+[[service]]
+name = "nginx"
+group = "Infrastructure"
+description = "High-performance HTTP server & reverse proxy"
+units = ["nginx"]
+health = ["http://localhost:80"]
+notes = [
+  "Ports: :80, :443",
+  "About: Web server and reverse proxy with HSTS, TLS 1.2+ and a hardened cipher suite.",
+]
+
+[[service]]
+name = "nginx-proxy-manager"
+group = "Infrastructure"
+description = "Web UI for Nginx reverse proxy & SSL certs"
+units = ["docker-nginx-proxy-manager"]
+health = ["http://localhost:81"]
+notes = [
+  "Admin UI: http://<server-ip>:81",
+  "Ports: :8881 (HTTP proxy), :8444 (HTTPS proxy)",
+  "About: Manage Nginx reverse proxy rules with automatic Let's Encrypt TLS.",
+  "Login: Default admin@example.com / changeme. Change it right after the first login.",
+]
+
+[[service]]
+name = "podman"
+group = "Infrastructure"
+description = "Rootless OCI container runtime"
+units = ["podman"]
+notes = [
+  "No web UI: use the podman and podman compose commands.",
+  "About: Daemonless OCI container engine with a Docker-compatible socket at /run/podman/podman.sock.",
+  "Note: Turn on Dockhand for a browser-based management UI.",
+]
+
+[[service]]
+name = "portainer"
+group = "Infrastructure"
+description = "Web UI for managing Docker/Podman stacks"
+units = ["docker-portainer", "podman-portainer"]
+health = ["https://localhost:9443"]
+notes = [
+  "Web UI: https://<server-ip>:9443 (Docker/Podman container manager)",
+  "Login: No default credentials. Create the admin account on first visit. Portainer locks setup after about 5 minutes; restart the container if it does.",
+  "About: Manage containers, images, volumes and networks.",
+  "Backend: vexos.server.portainer.backend is docker (the default, which turns Docker on) or podman (turn Podman on first).",
+]
+
+[[service]]
+name = "traefik"
+group = "Infrastructure"
+description = "Cloud-native edge router & reverse proxy"
+units = ["traefik"]
+health = ["http://localhost:8079/dashboard/"]
+notes = [
+  "Ports: :8882 (HTTP), :8445 (HTTPS)",
+  "Dashboard: http://<server-ip>:8079/dashboard/",
+  "About: Reverse proxy with automatic Let's Encrypt TLS and Docker label-based route discovery.",
+]
+
+# ── Inventory ────────────────────────────────────────────────────────────────
+
+[[service]]
+name = "home-registry"
+group = "Inventory"
+description = "Self-hosted home inventory tracker"
+units = ["docker-home-registry", "docker-home-registry-db"]
+health = ["http://localhost:8210"]
+notes = [
+  "Web UI: http://<server-ip>:8210",
+  "About: Home inventory tracker. Two containers: the app and its own Postgres.",
+  "Note: No default admin credentials. Create your account from the web UI on first visit.",
+]
+
+[[service]]
+name = "humidor"
+group = "Inventory"
+description = "Self-hosted cigar collection inventory tracker"
+units = ["docker-humidor", "docker-humidor-db"]
+health = ["http://localhost:9898"]
+notes = [
+  "Web UI: http://<server-ip>:9898",
+  "About: Cigar and humidor collection tracker. Two containers: the app and its own Postgres.",
+  "Note: No default admin credentials. Create your account from the web UI on first visit.",
+]
+
+# ── Media ────────────────────────────────────────────────────────────────────
+
+[[service]]
+name = "audiobookshelf"
+group = "Media"
+description = "Self-hosted audiobook & podcast server"
+tier = "mergerfs-bulk"
+units = ["audiobookshelf"]
+health = ["http://localhost:8234"]
+notes = [
+  "Web UI: http://<server-ip>:8234",
+  "About: Audiobook and podcast streaming server with progress sync and mobile apps.",
+]
+
+[[service]]
+name = "jellyfin"
+group = "Media"
+description = "Open-source media streaming server"
+tier = "mergerfs-bulk"
+units = ["jellyfin"]
+health = ["http://localhost:8096"]
+notes = [
+  "Web UI: http://<server-ip>:8096",
+  "About: Free, open-source media server for movies, TV, music and photos on any device.",
+  "Note: The first visit runs a setup wizard to add libraries and create the admin account.",
+]
+
+[[service]]
+name = "plex"
+group = "Media"
+description = "Personal media library & streaming server"
+tier = "mergerfs-bulk"
+units = ["plex"]
+health = ["http://localhost:32400/web"]
+notes = [
+  "Web UI: http://<server-ip>:32400/web",
+  "About: Media server with apps on nearly every platform. Hardware transcoding needs Plex Pass.",
+  "Note: Claim your server at plex.tv/claim on first setup. It needs a free Plex account.",
+]
+
+[[service]]
+name = "tautulli"
+group = "Media"
+description = "Monitoring & analytics for Plex Media Server"
+units = ["docker-tautulli"]
+health = ["http://localhost:8181"]
+notes = [
+  "Web UI: http://<server-ip>:8181",
+  "About: Play history, statistics and notifications for Plex.",
+  "Note: Connect to Plex by entering your Plex token in Settings, Plex Media Server.",
+]
+
+[[service]]
+name = "tdarr"
+group = "Media"
+description = "Distributed transcode automation (FFmpeg/HandBrake)"
+units = ["tdarr-server", "tdarr-node-local"]
+health = ["http://localhost:8265"]
+notes = [
+  "Web UI: http://<server-ip>:8265 (node API on :8266)",
+  "About: Transcode automation with FFmpeg and HandBrake, with a local worker node by default.",
+  "Warning: Tdarr rewrites files in place by default. Try it on a copy of a library first.",
+]
+
+# ── Media Requests & Automation ──────────────────────────────────────────────
+
+[[service]]
+name = "sabnzbd"
+group = "Media Requests & Automation"
+description = "SABnzbd Usenet downloader"
+option = "arr.sabnzbd"
+tier = "mergerfs-bulk"
+units = ["sabnzbd"]
+health = ["http://localhost:8080"]
+notes = ["Web UI: http://<server-ip>:8080"]
+
+[[service]]
+name = "sonarr"
+group = "Media Requests & Automation"
+description = "Sonarr TV series management"
+option = "arr.sonarr"
+tier = "mergerfs-bulk"
+units = ["sonarr"]
+health = ["http://localhost:8989"]
+notes = ["Web UI: http://<server-ip>:8989"]
+
+[[service]]
+name = "radarr"
+group = "Media Requests & Automation"
+description = "Radarr movie management"
+option = "arr.radarr"
+tier = "mergerfs-bulk"
+units = ["radarr"]
+health = ["http://localhost:7878"]
+notes = ["Web UI: http://<server-ip>:7878"]
+
+[[service]]
+name = "lidarr"
+group = "Media Requests & Automation"
+description = "Lidarr music management"
+option = "arr.lidarr"
+tier = "mergerfs-bulk"
+units = ["lidarr"]
+health = ["http://localhost:8686"]
+notes = ["Web UI: http://<server-ip>:8686"]
+
+[[service]]
+name = "prowlarr"
+group = "Media Requests & Automation"
+description = "Prowlarr indexer manager for the *arr apps"
+option = "arr.prowlarr"
+tier = "mergerfs-bulk"
+units = ["prowlarr"]
+health = ["http://localhost:9696"]
+notes = ["Web UI: http://<server-ip>:9696"]
+
+[[service]]
+name = "qbittorrent"
+group = "Media Requests & Automation"
+description = "qBittorrent torrent client"
+option = "arr.qbittorrent"
+tier = "mergerfs-bulk"
+units = ["qbittorrent"]
+health = ["http://localhost:8081"]
+notes = ["Web UI: http://<server-ip>:8081"]
+
+[[service]]
+name = "bazarr"
+group = "Media Requests & Automation"
+description = "Bazarr subtitle manager for Sonarr & Radarr"
+option = "arr.bazarr"
+tier = "mergerfs-bulk"
+units = ["bazarr"]
+health = ["http://localhost:6767"]
+notes = ["Web UI: http://<server-ip>:6767"]
+
+[[service]]
+name = "maintainerr"
+group = "Media Requests & Automation"
+description = "Maintainerr automated library cleanup rules"
+option = "arr.maintainerr"
+tier = "mergerfs-bulk"
+units = ["docker-maintainerr", "podman-maintainerr"]
+health = ["http://localhost:6246"]
+notes = ["Web UI: http://<server-ip>:6246"]
+
+[[service]]
+name = "mediamanager"
+group = "Media Requests & Automation"
+description = "TV/movie request & download manager"
+units = ["docker-mediamanager", "docker-mediamanager-db"]
+health = ["http://localhost:8000"]
+public_url = { option = "frontendUrl", port = 8000, host = "hostname", required = false }
+notes = [
+  "Web UI: http://<server-ip>:8000",
+  "About: TV and movie request and download manager. Two containers: the app and its own Postgres.",
+  "Login: Register with the admin e-mail you entered. That account becomes the admin.",
+]
+
+[[service]]
+name = "seerr"
+group = "Media Requests & Automation"
+description = "Media request manager (Jellyfin, Plex, Emby)"
+units = ["seerr"]
+health = ["http://localhost:5055"]
+notes = [
+  "Web UI: http://<server-ip>:5055",
+  "About: Media request manager for Jellyfin, Plex and Emby. The successor to Jellyseerr and Overseerr.",
+]
+
+[[service]]
+name = "sportarr"
+group = "Media Requests & Automation"
+description = "Sonarr-style PVR for sports events"
+units = ["docker-sportarr"]
+health = ["http://localhost:1867"]
+notes = [
+  "Web UI: http://<server-ip>:1867",
+  "About: Sonarr-style PVR for sports: events, leagues and fights.",
+]
+
+# ── Monitoring & Admin ───────────────────────────────────────────────────────
+
+[[service]]
+name = "beszel"
+group = "Monitoring & Admin"
+description = "Lightweight server monitoring hub with history & alerts"
+units = ["beszel-hub"]
+health = ["http://localhost:8090"]
+notes = [
+  "Web UI: http://<server-ip>:8090",
+  "About: Monitoring hub with CPU, memory, disk, network and container stats, history and alerts.",
+  "Note: Create the admin account on first visit. To watch this host too, turn on the Beszel agent.",
+]
+
+[[service]]
+name = "beszel-agent"
+group = "Monitoring & Admin"
+description = "Beszel agent — reports this host to a Beszel hub"
+units = ["beszel-agent"]
+notes = [
+  "Port: :45876 (the hub connects to the agent)",
+  "About: Reports this host's metrics to a Beszel hub.",
+  "Setup: After the rebuild, set the agent up with the hub's key and token. It fails to start until then.",
+]
+
+[[service]]
+name = "cockpit"
+group = "Monitoring & Admin"
+description = "Web-based Linux server management console"
+units = ["cockpit"]
+health = ["http://localhost:9090"]
+notes = [
+  "Web UI: http://<server-ip>:9090",
+  "About: Manage services, storage, networking and terminal sessions from a browser.",
+  "Login: Your normal Linux user credentials.",
+]
+
+[[service]]
+name = "nas"
+group = "Monitoring & Admin"
+description = "Cockpit + NAS plugins (Samba, NFS, ZFS)"
+units = ["cockpit"]
+health = ["http://localhost:9090"]
+notes = [
+  "Web UI: http://<server-ip>:9090 (Cockpit + NAS plugins)",
+  "About: Turns on the whole NAS stack at once: Cockpit, cockpit-navigator (files), cockpit-file-sharing (Samba and NFS shares) and cockpit-identities (users and groups).",
+  "Note: Sub-options can still be overridden, for example vexos.server.cockpit.navigator.enable = false.",
+]
+
+[[service]]
+name = "netdata"
+group = "Monitoring & Admin"
+description = "Real-time performance & health monitoring"
+units = ["netdata"]
+health = ["http://localhost:19999"]
+notes = [
+  "Web UI: http://<server-ip>:19999",
+  "About: Per-second system metrics with automatic anomaly detection.",
+]
+
+[[service]]
+name = "prometheus"
+group = "Monitoring & Admin"
+description = "Metrics collection & alerting toolkit"
+units = ["prometheus"]
+health = ["http://localhost:9092"]
+notes = [
+  "Web UI: http://<server-ip>:9092",
+  "About: Time-series metrics collection and alerting.",
+  "Note: Add scrape targets in the module. Node Exporter is not turned on for you.",
+]
+
+[[service]]
+name = "scrutiny"
+group = "Monitoring & Admin"
+description = "S.M.A.R.T. disk health monitoring dashboard"
+units = ["scrutiny"]
+health = ["http://localhost:8078"]
+notes = [
+  "Web UI: http://<server-ip>:8078",
+  "About: Drive health dashboard built on S.M.A.R.T. data, with alerts on failing metrics.",
+]
+
+[[service]]
+name = "uptime-kuma"
+group = "Monitoring & Admin"
+description = "Self-hosted uptime & status page monitoring"
+units = ["docker-uptime-kuma"]
+health = ["http://localhost:3001"]
+notes = [
+  "Web UI: http://<server-ip>:3001",
+  "About: Uptime monitoring with a public status page. Watches HTTP, TCP, DNS and more.",
+  "Note: Create the admin account on first visit, then add monitors.",
+]
+
+[[service]]
+name = "vexboard"
+group = "Monitoring & Admin"
+description = "VexOS Server dashboard"
+units = ["vexboard"]
+health = ["http://localhost:7280"]
+notes = [
+  "Web UI: http://<server-ip>:7280 (server dashboard)",
+  "About: The VexOS server dashboard.",
+  "Secret: The VEXBOARD_AUTH__SECRET file is generated for you at /etc/nixos/secrets/vexboard-secret.",
+]
+
+# ── Networking & Security ────────────────────────────────────────────────────
+
+[[service]]
+name = "adguard"
+group = "Networking & Security"
+description = "DNS-based ad & tracker blocker"
+units = ["adguardhome"]
+health = ["http://localhost:3080"]
+notes = [
+  "Web UI: http://<server-ip>:3080",
+  "DNS: Listens on port 53. After turning it on, point your router's DNS at this server.",
+]
+
+[[service]]
+name = "authelia"
+group = "Networking & Security"
+description = "Single sign-on & two-factor auth gateway"
+units = ["docker-authelia"]
+health = ["http://localhost:9091"]
+notes = [
+  "Web UI: http://<server-ip>:9091",
+  "About: Single sign-on and two-factor authentication in front of your apps.",
+  "Note: Create /var/lib/authelia/config/configuration.yml before the first start. See authelia.com/configuration.",
+]
+
+[[service]]
+name = "headscale"
+group = "Networking & Security"
+description = "Self-hosted Tailscale-compatible VPN (WireGuard)"
+units = ["headscale"]
+health = ["http://localhost:8085"]
+public_url = { option = "serverUrl", port = 0, host = "none", required = true }
+notes = [
+  "Web UI: http://<server-ip>:8085",
+  "About: A self-hosted Tailscale control server, for a WireGuard mesh VPN without Tailscale's servers.",
+  "CLI: Manage nodes with the headscale command on the server.",
+]
+
+[[service]]
+name = "pihole"
+group = "Networking & Security"
+description = "DNS ad blocker (nixpkgs or Docker)"
+units = ["pihole-ftl", "docker-pihole"]
+health = ["http://localhost:8053/api/info/login"]
+notes = [
+  "Web UI: http://<server-ip>:8053/ (native) or http://<server-ip>:8053/admin (docker), DNS on :53",
+  "Password: Generated on the first rebuild: sudo cat /etc/nixos/secrets/pihole-env",
+  "DNS: Loopback only by default. Set dnsBindHosts and openDnsFirewall to serve the LAN, then point your router's DNS here.",
+  "Note: It cannot run next to AdGuard Home, because both use port 53.",
+]
+
+[[service]]
+name = "unifi-toolkit"
+group = "Networking & Security"
+description = "Monitoring tools for UniFi OS consoles"
+units = ["docker-unifi-toolkit"]
+health = ["http://localhost:8010/health"]
+notes = [
+  "Web UI: http://<server-ip>:8010",
+  "About: Wi-Fi Stalker, Threat Watch, Network Pulse and House Arrest for UniFi OS consoles (UDM, UCG, Cloud Key Gen2+).",
+  "Setup: Enter the controller's local IP and an API key in the web UI (gear icon). There is no login, so keep it on the LAN.",
+  "Secret: ENCRYPTION_KEY is generated into /etc/nixos/secrets/unifi-toolkit-env. Do not change it after setup.",
+]
+
+[[service]]
+name = "unbound"
+group = "Networking & Security"
+description = "Validating, recursive, caching DNS resolver"
+units = ["unbound"]
+notes = [
+  "DNS: Port 5335 (UDP and TCP)",
+  "About: Validating, recursive DNS resolver that forwards over DNS-over-TLS to Cloudflare (1.1.1.1).",
+]
+
+[[service]]
+name = "vaultwarden"
+group = "Networking & Security"
+description = "Lightweight Bitwarden-compatible password manager"
+units = ["vaultwarden"]
+health = ["http://localhost:8222"]
+public_url = { option = "domain", port = 0, host = "none", required = true }
+notes = [
+  "Web UI: http://<server-ip>:8222",
+  "Admin: http://<server-ip>:8222/admin (set ADMIN_TOKEN in the environment file to enable it)",
+  "About: A light Bitwarden-compatible password manager. Use any official Bitwarden client and point it at this server.",
+  "Warning: Put it behind a TLS reverse proxy (Caddy, Nginx or Traefik) before exposing it outside your network.",
+]
+
+# ── Productivity ─────────────────────────────────────────────────────────────
+
+[[service]]
+name = "code-server"
+group = "Productivity"
+description = "VS Code running in the browser"
+units = ["docker-code-server"]
+health = ["http://localhost:4444"]
+notes = [
+  "Web UI: http://<server-ip>:4444",
+  "About: Visual Studio Code in the browser. Develop from any device without installing anything.",
+  "Note: Set vexos.server.code-server.hashedPassword to your argon2 hash.",
+]
+
+[[service]]
+name = "forgejo"
+group = "Productivity"
+description = "Self-hosted Git & code collaboration (Gitea fork)"
+tier = "zfs-live"
+units = ["forgejo"]
+health = ["http://localhost:3000"]
+notes = [
+  "Web UI: http://<server-ip>:3000",
+  "About: Lightweight Git forge (a Gitea fork) with issues, pull requests and CI. Registration is off by default.",
+]
+
+[[service]]
+name = "homepage"
+group = "Productivity"
+description = "Customisable server dashboard & start page"
+units = ["docker-homepage"]
+health = ["http://localhost:3010"]
+notes = [
+  "Web UI: http://<server-ip>:3010 (requires Docker)",
+  "About: A customisable service dashboard with status widgets and bookmarks.",
+]
+
+[[service]]
+name = "joplin"
+group = "Productivity"
+description = "Self-hosted Joplin Server note sync backend"
+units = ["docker-joplin-server", "docker-joplin-db"]
+health = ["http://localhost:22300"]
+public_url = { option = "baseUrl", port = 22300, host = "hostname", required = false }
+notes = [
+  "Web UI: http://<tailnet-host>:22300 (also reachable from the LAN, whatever openFirewall says)",
+  "About: Sync server for the Joplin apps. Two containers: the app and its own Postgres.",
+  "Login: admin@localhost / admin. Change it from the web UI after the first boot.",
+  "Note: If clients report 'invalid origin' sync errors, set the public URL to the one clients use.",
+]
+
+[[service]]
+name = "mealie"
+group = "Productivity"
+description = "Self-hosted recipe manager & meal planner"
+units = ["docker-mealie"]
+health = ["http://localhost:9010"]
+notes = [
+  "Web UI: http://<server-ip>:9010",
+  "About: Recipe manager and meal planner with ingredient parsing and recipe import from URLs.",
+  "Login: Default changeme@example.com / MyPassword. Change it right after the first login.",
+]
+
+[[service]]
+name = "paperless"
+group = "Productivity"
+description = "Document scanning, OCR, tagging & archival"
+tier = "zfs-live"
+units = ["paperless-web", "paperless-scheduler", "paperless-task-queue", "paperless-consumer"]
+health = ["http://localhost:28981"]
+notes = [
+  "Web UI: http://<server-ip>:28981",
+  "Login: No default password. Create the admin first: sudo paperless-manage createsuperuser",
+  "About: Document management with OCR, tagging, full-text search and automatic consumption.",
+  "Note: Drop documents into the consume folder and Paperless reads and indexes them.",
+]
+
+[[service]]
+name = "wishlist"
+group = "Productivity"
+description = "Self-hosted wishlist & gift registry"
+units = ["docker-wishlist"]
+health = ["http://localhost:3280"]
+public_url = { option = "origin", port = 3280, host = "hostname", required = false }
+notes = [
+  "Web UI: http://<server-ip>:3280",
+  "About: Wishlist and gift registry (cmintey/wishlist). One container, SQLite under vexos.server.wishlist.dataDir.",
+  "Login: Create the first account on first visit. It becomes the admin.",
+  "Note: If sign-in or uploads fail, set the public URL to the exact address you browse to. The origin is validated.",
+]
+
+# ── Smart Home & Notifications ───────────────────────────────────────────────
+
+[[service]]
+name = "ntfy"
+group = "Smart Home & Notifications"
+description = "Simple HTTP-based push notification server"
+units = ["ntfy-sh"]
+health = ["http://localhost:2586"]
+notes = [
+  "Web UI: http://<server-ip>:2586",
+  "About: Push notifications to phones or scripts with a plain HTTP PUT or POST.",
+  "Example: curl -d 'message' http://<server-ip>:2586/mytopic",
+]
+
+[[service]]
+name = "zigbee2mqtt"
+group = "Smart Home & Notifications"
+description = "Zigbee → MQTT bridge (no proprietary hub needed)"
+units = ["zigbee2mqtt"]
+health = ["http://localhost:8088"]
+notes = [
+  "Web UI: http://<server-ip>:8088",
+  "About: Bridges Zigbee devices to MQTT so you can control them without a vendor cloud.",
+  "Note: vexos.server.zigbee2mqtt.serialPort is your coordinator device (default /dev/ttyUSB0). It needs an MQTT broker, such as Mosquitto.",
+]
+
+# ── AI & Privacy ─────────────────────────────────────────────────────────────
+
+[[service]]
+name = "kiji-proxy"
+group = "AI & Privacy"
+description = "Privacy-first OpenAI-compatible AI API proxy"
+units = ["kiji-proxy"]
+health = ["http://localhost:8080/health"]
+notes = [
+  "Proxy: http://127.0.0.1:8080, health at http://localhost:8080/health",
+  "About: A local proxy that masks personal data in AI API requests (OpenAI, Anthropic and others) with an on-device ONNX model, then restores it in the responses.",
+  "Usage: Set HTTP_PROXY and HTTPS_PROXY to http://localhost:8080.",
+  "Secrets: Optional. Set vexos.server.kiji-proxy.environmentFile to a file such as /etc/nixos/secrets/kiji-proxy.env holding OPENAI_API_KEY=sk-... and LOG_PII_CHANGES=true.",
+]
+
+[[service]]
+name = "searxng"
+group = "AI & Privacy"
+description = "Privacy-respecting metasearch engine (no tracking, no query logging)"
+units = ["uwsgi"]
+health = ["http://localhost:8888"]
+notes = [
+  "Web UI: http://<server-ip>:8888 (loopback-only by default)",
+  "About: Metasearch that aggregates many engines without tracking. Hardened by default: no uWSGI request logging, and searches are sent by POST so queries stay out of URLs and logs.",
+  "Secret: SEARXNG_SECRET_KEY is generated at /etc/nixos/secrets/searxng.env.",
+  "Note: Closed to the network by default (openFirewall = false, bound to 127.0.0.1). Put Caddy, Nginx or Traefik in front, or set vexos.server.searxng.openFirewall = true for direct LAN access.",
+]
+
+# ── Experimental ─────────────────────────────────────────────────────────────
+
+[[service]]
+name = "proxmox"
+group = "Experimental"
+description = "Proxmox VE integration (experimental)"
+tier = "zfs-vm"
+units = ["pve-cluster", "pvedaemon", "pveproxy", "pvestatd", "pvescheduler"]
+health = ["https://localhost:8006"]
+notes = [
+  "Web UI: https://<server-ip>:8006, plus :3128 (SPICE) and :5900-5999 (VNC)",
+  "About: Proxmox VE hypervisor for KVM virtual machines and LXC containers, from a web UI.",
+  "Source: github.com/SaumonNet/proxmox-nixos",
+  "Warning: Experimental. Not recommended for production machines.",
+  "Cache: Add https://cache.saumon.network/proxmox-nixos to nix.settings.substituters, with the key proxmox-nixos:D9RYSWpQQC/msZUWphOY2I5RLH5Dd6yQcaHIuug7dWM= in trusted-public-keys.",
+]

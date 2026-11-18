@@ -5,6 +5,7 @@ pub mod ansi;
 pub mod arg_dialog;
 pub mod job_view;
 pub mod pages;
+pub mod service_enable;
 pub mod switch_dialog;
 pub mod terminal_view;
 pub mod window;

@@ -22,6 +22,7 @@ pub mod gitrepo;
 pub mod nixedit;
 pub mod rebuild;
 pub mod runner;
+pub mod services;
 pub mod sidefile;
 pub mod system;
 pub mod tailscale;
@@ -76,6 +77,12 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "feature-disable",
     "fix-flake",
     "tailscale-operator",
+    "service-enable",
+    "service-disable",
+    "service-set-url",
+    "service-restart",
+    "plex-pass-enable",
+    "plex-pass-disable",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -133,6 +140,12 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "feature-disable" => features::disable(ctx).await,
         "fix-flake" => features::fix_flake(ctx).await,
         "tailscale-operator" => tailscale::operator(ctx).await,
+        "service-enable" => services::enable(ctx).await,
+        "service-disable" => services::disable(ctx).await,
+        "service-set-url" => services::set_url(ctx).await,
+        "service-restart" => services::restart(ctx).await,
+        "plex-pass-enable" => services::plex_pass(ctx, true).await,
+        "plex-pass-disable" => services::plex_pass(ctx, false).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;
@@ -206,7 +219,8 @@ mod tests {
     fn the_system_and_feature_operations_are_native_and_the_rest_are_not_yet() {
         assert!(is_native("switch"));
         assert!(is_native("feature-enable"));
-        assert!(!is_native("service-restart"));
+        assert!(is_native("service-restart"));
+        assert!(!is_native("backup-now"));
         assert!(!is_query("feature-list"));
     }
 

@@ -18,6 +18,18 @@ pub fn activate(app: &Rc<App>, window: &Window, id: &str, preset: HashMap<String
         log::error!("no catalog action `{id}`");
         return;
     };
+    // Which questions Enable asks depends on the service, so it has a form of its own
+    // rather than the generic one, which would list every question of every service.
+    if id == "service-enable" {
+        match preset
+            .get("service")
+            .and_then(|name| vexportal_ops::services::find(name))
+        {
+            Some(service) => crate::ui::service_enable::present(app, window, service),
+            None => log::error!("`service-enable` needs a service"),
+        }
+        return;
+    }
     if action.params.iter().any(|p| !preset.contains_key(&p.name)) {
         arg_dialog::present(app, window, action, preset);
     } else {

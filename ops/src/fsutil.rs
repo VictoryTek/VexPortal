@@ -78,6 +78,19 @@ pub fn create_new(path: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
     result
 }
 
+/// `bytes` random bytes from the kernel, as lowercase hex. For generated secrets.
+pub fn random_hex(bytes: usize) -> io::Result<String> {
+    use std::fmt::Write as _;
+    use std::io::Read;
+    let mut buf = vec![0u8; bytes];
+    fs::File::open("/dev/urandom")?.read_exact(&mut buf)?;
+    let mut out = String::with_capacity(bytes * 2);
+    for b in buf {
+        let _ = write!(out, "{b:02x}");
+    }
+    Ok(out)
+}
+
 /// The permission bits of an existing file, so an edit keeps them.
 pub fn mode_of(path: &Path) -> io::Result<u32> {
     Ok(fs::metadata(path)?.mode() & 0o7777)

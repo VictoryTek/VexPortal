@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn runs_just_directly_with_the_validated_arguments() {
-        let argv = just_argv(&invocation("service-enable", &[("service", "plex")]));
+        let argv = just_argv(&invocation("ssh", &[("target", "nimda@10.35.1.50")]));
         assert_eq!(
             argv,
             [
@@ -138,9 +138,8 @@ mod tests {
                 "/etc/nixos/justfile",
                 "--working-directory",
                 "/etc/nixos",
-                "service",
-                "enable",
-                "plex"
+                "ssh",
+                "nimda@10.35.1.50"
             ]
         );
     }

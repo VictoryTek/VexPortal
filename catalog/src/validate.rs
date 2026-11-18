@@ -315,14 +315,9 @@ mod tests {
 
     #[test]
     fn menu_actions_prefix_their_command() {
-        let inv = build(
-            &catalog(),
-            "service-restart",
-            &answers(&[("service", "plex")]),
-        )
-        .unwrap();
-        assert_eq!(inv.just_args(), ["service", "restart", "plex"]);
-        assert_eq!(inv.audit_line(), "just service restart plex");
+        let inv = build(&catalog(), "cache-push", &answers(&[("cache", "vexos")])).unwrap();
+        assert_eq!(inv.just_args(), ["cache", "push", "vexos"]);
+        assert_eq!(inv.audit_line(), "just cache push vexos");
     }
 
     /// A recipe-backed action with three parameters, the middle one optional.
@@ -440,12 +435,13 @@ widget = \"text\"
     fn terminal_actions_validate_their_parameters_too() {
         let inv = build_for_terminal(
             &catalog(),
-            "service-enable",
-            &answers(&[("service", "plex")]),
+            "ssh",
+            &answers(&[("target", "nimda@10.35.1.50")]),
         )
         .unwrap();
-        assert_eq!(inv.just_args(), ["service", "enable", "plex"]);
-        assert!(build_for_terminal(&catalog(), "service-enable", &answers(&[])).is_err());
+        assert_eq!(inv.just_args(), ["ssh", "nimda@10.35.1.50"]);
+        assert!(build_for_terminal(&catalog(), "ssh", &answers(&[])).is_err());
+        assert!(build_for_terminal(&catalog(), "ssh", &answers(&[("target", "; id")])).is_err());
     }
 
     #[test]
@@ -500,12 +496,7 @@ widget = \"text\"
 
     #[test]
     fn recipe_actions_still_audit_as_just_commands() {
-        let inv = build(
-            &catalog(),
-            "service-restart",
-            &answers(&[("service", "plex")]),
-        )
-        .unwrap();
+        let inv = build(&catalog(), "cache-push", &answers(&[("cache", "vexos")])).unwrap();
         assert_eq!(inv.backend, Backend::Recipe);
         assert!(inv.audit_line().starts_with("just "));
     }

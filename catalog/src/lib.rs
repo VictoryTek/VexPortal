@@ -133,6 +133,21 @@ pub enum Format {
     FlakeRef,
     /// A program's file name, as crash notifications are keyed: no `/`, no leading `.`.
     ProgramName,
+    /// An `http://` or `https://` address a person types, with no space, quote,
+    /// backslash, `$` or `;` in it.
+    Url,
+    /// A dotted IPv4 address.
+    Ipv4,
+    /// A network interface name such as `enp2s0`.
+    Interface,
+    /// An e-mail address.
+    Email,
+    /// A bare domain such as `example.com`.
+    Domain,
+    /// A host label or dotted labels under a domain, such as `home` or `vpn.lab`.
+    Subdomain,
+    /// A restic repository: an absolute path, or `sftp:`, `rest:`, `s3:` and the like.
+    ResticRepo,
 }
 
 /// How the GUI renders a parameter, and what the daemon will accept for it.
@@ -283,7 +298,8 @@ impl Action {
     /// Routed through the justfile's `_menu` helper, which joins the parameters into
     /// one string and splits them again on whitespace.
     pub fn is_menu_routed(&self) -> bool {
-        self.command.len() > 1
+        // A native action never reaches `just`, so its answers are not joined and split.
+        !self.is_native() && self.command.len() > 1
     }
 
     /// `just feature enable`, for headers and messages.
@@ -492,6 +508,10 @@ mod tests {
         // positional parameter after it would silently shift into the wrong slot.
         let catalog = Catalog::load().unwrap();
         for action in &catalog.actions {
+            // A native action reads its answers by name, so order means nothing to it.
+            if action.is_native() {
+                continue;
+            }
             if let Some(idx) = action.params.iter().position(Param::is_secret) {
                 assert_eq!(
                     idx,

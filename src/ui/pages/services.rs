@@ -1,43 +1,46 @@
-//! Server services: every module VexOS offers, which ones are on, and a page each.
+//! Server services: every module VexOS offers, which ones are on and how they are doing,
+//! and a page each.
+//!
+//! What a service is, where to reach it and what to know about it comes from the built-in
+//! table (`vexportal_ops::services`); how it is doing is asked of systemd and of the
+//! service's own address as the logged-in user, so none of it needs the daemon.
 
 use crate::app::App;
+use crate::system::services as probes;
 use crate::ui::{self, window::Window};
 
 use adw::prelude::*;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use vexportal_catalog::drift::ServiceEntry;
+use vexportal_ops::services::{self, Health, Reach, Service};
 
 /// A heading, its group, and each row with the lowercase text search matches on.
 type ServiceGroup = (String, adw::PreferencesGroup, Vec<(adw::ActionRow, String)>);
 
-/// Per-service actions, which live on each service's own page — and the catalog
-/// listing, which this page already is.
-const PER_SERVICE: [&str; 8] = [
-    "service-available",
-    "service-info",
-    "service-status",
+/// Per-service actions, which live on each service's own page.
+const PER_SERVICE: [&str; 6] = [
     "service-restart",
     "service-enable",
     "service-disable",
+    "service-set-url",
     "plex-pass-enable",
     "plex-pass-disable",
 ];
 
 pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
-    let services = catalog(app);
+    let all = services::all();
     let state = app.state.borrow();
-    let enabled = services
+    let enabled = all
         .iter()
-        .filter(|s| state.settings.service_enabled(&s.name))
+        .filter(|s| state.service_enabled(&s.name))
         .count();
     drop(state);
 
     let page = adw::PreferencesPage::new();
     page.set_description(&format!(
         "{enabled} of {} services enabled on this server.",
-        services.len()
+        all.len()
     ));
 
     for group in ui::action_groups(app, window, "services", &PER_SERVICE) {
@@ -52,21 +55,18 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     search_group.add(&search);
     page.add(&search_group);
 
-    // Enabled services first, then the catalog's own groups in its order.
+    // Enabled services first, then the table's own groups in its order.
     let mut groups: Vec<ServiceGroup> = Vec::new();
+    let mut watching: Vec<(&'static Service, gtk::Label)> = Vec::new();
     let state = app.state.borrow();
-    for (on, service) in services
+    let on = |s: &&Service| state.service_enabled(&s.name);
+    for (is_on, service) in all
         .iter()
-        .filter(|s| state.settings.service_enabled(&s.name))
+        .filter(on)
         .map(|s| (true, s))
-        .chain(
-            services
-                .iter()
-                .filter(|s| !state.settings.service_enabled(&s.name))
-                .map(|s| (false, s)),
-        )
+        .chain(all.iter().filter(|s| !on(s)).map(|s| (false, s)))
     {
-        let heading = if on {
+        let heading = if is_on {
             "Enabled"
         } else {
             service.group.as_str()
@@ -79,7 +79,10 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
                 groups.len() - 1
             }
         };
-        let row = service_row(app, window, service, on);
+        let (row, health) = service_row(app, window, service, is_on);
+        if let Some(label) = health {
+            watching.push((service, label));
+        }
         groups[index].1.add(&row);
         let haystack = format!("{} {}", service.name, service.description).to_lowercase();
         groups[index].2.push((row, haystack));
@@ -106,55 +109,86 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
         }
     });
 
+    // One question to systemd answers every row.
+    if !watching.is_empty() {
+        glib::spawn_future_local(async move {
+            let units: Vec<String> = watching
+                .iter()
+                .flat_map(|(service, _)| service.unit_names())
+                .collect();
+            let infos = probes::units(&units).await;
+            for (service, label) in &watching {
+                if infos.is_empty() {
+                    show_unknown(label);
+                } else {
+                    show_health(label, services::report_for(service, &infos).health);
+                }
+            }
+        });
+    }
+
     ui::page(app, window, "Services", &page)
 }
 
-/// The services this justfile offers, grouped and described; falls back to the bare
-/// name list if the justfile has no `_service_catalog`.
-fn catalog(app: &App) -> Vec<ServiceEntry> {
-    if !app.facts.service_catalog.is_empty() {
-        return app.facts.service_catalog.clone();
-    }
-    app.facts
-        .server_services
-        .iter()
-        .map(|name| ServiceEntry {
-            group: "Services".to_string(),
-            name: name.clone(),
-            description: String::new(),
-        })
-        .collect()
-}
-
-fn service_row(app: &Rc<App>, window: &Window, service: &ServiceEntry, on: bool) -> adw::ActionRow {
-    // Plain text: the justfile's descriptions contain `&`, which is not valid markup.
+/// A row, and for an enabled service the pill its health will be written into.
+fn service_row(
+    app: &Rc<App>,
+    window: &Window,
+    service: &'static Service,
+    on: bool,
+) -> (adw::ActionRow, Option<gtk::Label>) {
+    // Plain text: the descriptions contain `&`, which is not valid markup.
     let row = adw::ActionRow::builder()
         .title(&service.name)
         .subtitle(&service.description)
         .use_markup(false)
         .activatable(true)
         .build();
-    if on {
-        row.add_suffix(&ui::pill(
-            "Enabled",
-            "safe",
-            "Enabled in server-services.nix",
-        ));
-    }
+    let pill = on.then(|| {
+        let pill = ui::pill("Checking…", "", "How this service is doing right now");
+        row.add_suffix(&pill);
+        pill
+    });
     row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
     row.connect_activated({
         let app = app.clone();
         let window = window.clone();
-        let service = service.clone();
-        move |_| window.push(&detail(&app, &window, &service))
+        move |_| window.push(&detail(&app, &window, service))
     });
-    row
+    (row, pill)
+}
+
+/// Colour and word for a service's health. Colour is never the only signal: the word is
+/// always there.
+fn show_health(label: &gtk::Label, health: Health) {
+    label.remove_css_class("safe");
+    label.remove_css_class("destructive");
+    label.set_text(health.label());
+    match health {
+        Health::Running => label.add_css_class("safe"),
+        Health::Failed | Health::Partial => label.add_css_class("destructive"),
+        Health::Stopped | Health::NotBuilt => {}
+    }
+    label.set_tooltip_text(Some(match health {
+        Health::Running => "Every systemd unit of this service is running",
+        Health::Stopped => "None of this service's systemd units is running",
+        Health::Failed => "A systemd unit of this service has failed",
+        Health::Partial => "Some of this service's systemd units are not running",
+        Health::NotBuilt => "Enabled in the configuration, but not built yet: rebuild to start it",
+    }));
+}
+
+fn show_unknown(label: &gtk::Label) {
+    label.remove_css_class("safe");
+    label.remove_css_class("destructive");
+    label.set_text("Unknown");
+    label.set_tooltip_text(Some("systemd did not answer"));
 }
 
 /// One service: how to reach it, whether it is healthy, and turning it on or off.
-fn detail(app: &Rc<App>, window: &Window, service: &ServiceEntry) -> adw::NavigationPage {
+fn detail(app: &Rc<App>, window: &Window, service: &'static Service) -> adw::NavigationPage {
     let state = app.state.borrow();
-    let on = state.settings.service_enabled(&service.name);
+    let on = state.service_enabled(&service.name);
     let plex_pass = state.settings.plex_pass();
     drop(state);
 
@@ -166,21 +200,52 @@ fn detail(app: &Rc<App>, window: &Window, service: &ServiceEntry) -> adw::Naviga
         .title(name)
         .description(glib::markup_escape_text(&service.description))
         .build();
-    about.set_header_suffix(Some(&if on {
-        ui::pill("Enabled", "safe", "Enabled in server-services.nix")
-    } else {
-        ui::pill("Not enabled", "", "")
-    }));
+    let health = ui::pill(
+        if on { "Checking…" } else { "Not enabled" },
+        "",
+        "How this service is doing right now",
+    );
+    about.set_header_suffix(Some(&health));
     page.add(&about);
 
+    // Ports, addresses and what to know. `<server-ip>` is this machine.
+    let notes = adw::PreferencesGroup::builder()
+        .title("Access and notes")
+        .build();
+    for (label, text) in service.notes() {
+        let row = adw::ActionRow::builder()
+            .title(if label.is_empty() { "Note" } else { label })
+            .subtitle(text)
+            .use_markup(false)
+            .subtitle_selectable(true)
+            .build();
+        row.set_subtitle_lines(0);
+        row.set_title_lines(0);
+        notes.add(&row);
+    }
+    page.add(&notes);
+
     if on {
-        for id in ["service-info", "service-status", "service-restart"] {
+        page.add(&status_group(service, &health));
+    }
+
+    if on {
+        let group = adw::PreferencesGroup::builder().title("Service").build();
+        for id in ["service-restart"] {
             if let Some(action) = app.visible(id) {
-                about.add(&ui::action_row(app, window, action, &preset));
+                group.add(&ui::action_row(app, window, action, &preset));
             }
         }
+        if service.public_url.is_some() {
+            if let Some(action) = app.visible("service-set-url") {
+                group.add(&ui::action_row(app, window, action, &preset));
+            }
+        }
+        page.add(&group);
     } else if let Some(action) = app.visible("service-enable") {
-        about.add(&ui::action_row(app, window, action, &preset));
+        let group = adw::PreferencesGroup::new();
+        group.add(&ui::action_row(app, window, action, &preset));
+        page.add(&group);
     }
 
     if on && name == "plex" && app.visible("plex-pass-enable").is_some() {
@@ -249,4 +314,102 @@ fn detail(app: &Rc<App>, window: &Window, service: &ServiceEntry) -> adw::Naviga
     }
 
     ui::page(app, window, name, &page)
+}
+
+/// systemd's report on each unit and whether the service's addresses answer, with a
+/// button to ask again. `health` is the pill in the page header, kept in step.
+fn status_group(service: &'static Service, health: &gtk::Label) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder().title("Status").build();
+    let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
+    refresh.add_css_class("flat");
+    refresh.set_valign(gtk::Align::Center);
+    refresh.set_tooltip_text(Some("Check again"));
+    group.set_header_suffix(Some(&refresh));
+
+    let rows: Rc<RefCell<Vec<adw::ActionRow>>> = Rc::default();
+    let check = {
+        let group = group.clone();
+        let health = health.clone();
+        let refresh = refresh.clone();
+        let rows = rows.clone();
+        move || {
+            // A second click while a check is running would only pile up.
+            if !refresh.is_sensitive() {
+                return;
+            }
+            refresh.set_sensitive(false);
+            let (group, health, refresh, rows) =
+                (group.clone(), health.clone(), refresh.clone(), rows.clone());
+            glib::spawn_future_local(async move {
+                check_status(service, &group, &health, &rows).await;
+                refresh.set_sensitive(true);
+            });
+        }
+    };
+    refresh.connect_clicked({
+        let check = check.clone();
+        move |_| check()
+    });
+    check();
+    group
+}
+
+async fn check_status(
+    service: &'static Service,
+    group: &adw::PreferencesGroup,
+    health: &gtk::Label,
+    rows: &Rc<RefCell<Vec<adw::ActionRow>>>,
+) {
+    let infos = probes::units(&service.unit_names()).await;
+    for row in rows.borrow_mut().drain(..) {
+        group.remove(&row);
+    }
+    let add = |title: &str, subtitle: &str| -> adw::ActionRow {
+        let row = adw::ActionRow::builder()
+            .title(title)
+            .subtitle(subtitle)
+            .use_markup(false)
+            .build();
+        row.set_subtitle_lines(0);
+        group.add(&row);
+        rows.borrow_mut().push(row.clone());
+        row
+    };
+
+    if infos.is_empty() {
+        show_unknown(health);
+        add(
+            "systemd did not answer",
+            "Use the button above to try again.",
+        );
+        return;
+    }
+    let report = services::report_for(service, &infos);
+    show_health(health, report.health);
+    if report.units.is_empty() {
+        add(
+            "Not built yet",
+            "It is enabled in the configuration, but none of its systemd units exist. Rebuild to build it.",
+        );
+        return;
+    }
+    for unit in &report.units {
+        let detail = if unit.sub.is_empty() || unit.sub == unit.active {
+            unit.active.clone()
+        } else {
+            format!("{} ({})", unit.active, unit.sub)
+        };
+        add(&format!("{}.service", unit.id), &detail);
+    }
+
+    for url in &service.health {
+        let row = add(url, "Checking…");
+        let verdict = match probes::probe(url).await {
+            Some(Reach::Ok(code)) => format!("Answers ({code})"),
+            Some(Reach::Error(code)) => format!("Answers with an error ({code})"),
+            Some(Reach::Unreachable) => "Does not answer".to_string(),
+            None => "Not checked: curl is not installed".to_string(),
+        };
+        row.set_subtitle(&verdict);
+    }
 }

@@ -2,13 +2,12 @@
 //!
 //! `just --dump --dump-format json` needs no privileges — the justfile is
 //! world-readable — so the GUI runs it directly rather than through the daemon. It
-//! supplies the values behind the dynamic lists (`_feature_names`,
-//! `_server_service_names`, `_service_catalog`) and the ground truth for the drift
-//! check.
+//! supplies the feature list and the ground truth for the drift check. (The service list is
+//! built in now.)
 
 use std::collections::BTreeSet;
 use std::process::Command;
-use vexportal_catalog::drift::{compare, Drift, JustDump, ServiceEntry};
+use vexportal_catalog::drift::{compare, Drift, JustDump};
 use vexportal_catalog::{Action, Catalog, DynamicSource};
 
 pub const JUSTFILE: &str = "/etc/nixos/justfile";
@@ -17,9 +16,6 @@ pub const JUSTFILE: &str = "/etc/nixos/justfile";
 #[derive(Debug, Default)]
 pub struct JustfileFacts {
     pub features: Vec<String>,
-    pub server_services: Vec<String>,
-    /// Every server service module, grouped and described, from `_service_catalog`.
-    pub service_catalog: Vec<ServiceEntry>,
     /// Recipe names this host's justfile actually defines.
     ///
     /// `/etc/nixos/justfile` is a copy taken by the last rebuild, so a host that has
@@ -80,8 +76,6 @@ impl JustfileFacts {
 
         Self {
             features: dump.list_variable(DynamicSource::Features.just_variable()),
-            server_services: dump.list_variable(DynamicSource::ServerServices.just_variable()),
-            service_catalog: dump.service_catalog(),
             available: dump.recipe_names().map(str::to_string).collect(),
             drift: compare(catalog, &dump),
             error: None,
@@ -91,14 +85,16 @@ impl JustfileFacts {
     /// The choices for one dynamic dropdown, with the catalog's extras (`all`) first.
     pub fn choices(&self, source: DynamicSource, extra: &[String]) -> Vec<String> {
         let mut choices: Vec<String> = extra.to_vec();
-        choices.extend(
-            match source {
-                DynamicSource::Features => &self.features,
-                DynamicSource::ServerServices => &self.server_services,
-            }
-            .iter()
-            .cloned(),
-        );
+        match source {
+            DynamicSource::Features => choices.extend(self.features.iter().cloned()),
+            // The service table is built in now, so a justfile that lists a different
+            // set does not change what can be chosen.
+            DynamicSource::ServerServices => choices.extend(
+                vexportal_ops::services::names()
+                    .into_iter()
+                    .map(str::to_string),
+            ),
+        }
         choices
     }
 

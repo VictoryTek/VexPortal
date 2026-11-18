@@ -492,6 +492,75 @@ mod tests {
         assert_eq!(in_catalog, in_ops);
     }
 
+    #[test]
+    fn every_setup_question_is_a_parameter_of_service_enable_and_the_other_way_round() {
+        use vexportal_catalog::Widget;
+        use vexportal_ops::services::{self, Kind};
+
+        let catalog = Catalog::load().unwrap();
+        let action = catalog.action("service-enable").unwrap();
+        let param = |id: &str| action.params.iter().find(|p| p.name == id);
+
+        let mut asked = std::collections::BTreeSet::new();
+        for service in services::all() {
+            for question in services::questions(service) {
+                asked.insert(question.id);
+                let p = param(question.id).unwrap_or_else(|| {
+                    panic!(
+                        "`{}` asks `{}` but service-enable has no such parameter",
+                        service.name, question.id
+                    )
+                });
+                let right_widget = match question.kind {
+                    Kind::Switch => {
+                        matches!(&p.widget, Widget::Choice { choices } if choices == &["yes", "no"])
+                    }
+                    Kind::Secret => matches!(p.widget, Widget::Secret),
+                    Kind::Text => matches!(p.widget, Widget::Text { .. }),
+                };
+                assert!(
+                    right_widget,
+                    "`{}` is the wrong kind of parameter for {:?}",
+                    question.id, question.kind
+                );
+            }
+        }
+        // `with_backup` is the dialog's own checkbox, and `service` names the service.
+        for p in &action.params {
+            assert!(
+                asked.contains(p.name.as_str())
+                    || matches!(p.name.as_str(), "service" | "with_backup"),
+                "service-enable has a parameter `{}` that no service asks for",
+                p.name
+            );
+        }
+        assert!(param("with_backup").is_some());
+    }
+
+    #[test]
+    fn the_catalog_service_choices_are_the_ops_service_table() {
+        // The service parameter is validated as a slug by the catalog; the operation checks
+        // the name against the table. Neither side keeps a second list.
+        let catalog = Catalog::load().unwrap();
+        for id in [
+            "service-restart",
+            "service-enable",
+            "service-disable",
+            "service-set-url",
+        ] {
+            let action = catalog.action(id).unwrap();
+            assert!(action.is_native(), "{id}");
+            let service = action.params.iter().find(|p| p.name == "service").unwrap();
+            assert!(service.required, "{id}");
+        }
+        for name in vexportal_ops::services::names() {
+            assert!(
+                vexportal_catalog::Format::Slug.validate(name).is_ok(),
+                "{name}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn run_captures_output_and_the_exit_code() {
         let runner = TokioRunner::new(CancellationToken::new());
@@ -685,14 +754,7 @@ mod tests {
     /// An action that is still a recipe, so `execute` finds no native handler for it.
     fn feature_enable() -> Invocation {
         let catalog = Catalog::load().unwrap();
-        vexportal_catalog::validate::build(
-            &catalog,
-            "service-restart",
-            &[("service".to_string(), "plex".to_string())]
-                .into_iter()
-                .collect(),
-        )
-        .unwrap()
+        vexportal_catalog::validate::build(&catalog, "cache-push", &Default::default()).unwrap()
     }
 
     #[tokio::test]

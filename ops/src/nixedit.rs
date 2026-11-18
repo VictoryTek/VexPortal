@@ -160,6 +160,11 @@ pub fn is_set(text: &str, opt: &str, value: &NixValue) -> bool {
     }
 }
 
+/// Whether an uncommented line assigns `opt` at all, whatever the value.
+pub fn is_assigned(text: &str, opt: &str) -> bool {
+    value_of(text, opt).is_some()
+}
+
 /// The boolean in an uncommented `opt = true;` or `opt = false;` line, if there is one.
 pub fn get_bool(text: &str, opt: &str) -> Option<bool> {
     match value_of(text, opt)? {
@@ -167,6 +172,11 @@ pub fn get_bool(text: &str, opt: &str) -> Option<bool> {
         "false" => Some(false),
         _ => None,
     }
+}
+
+/// The integer in an uncommented `opt = 123;` line, if there is one.
+pub fn get_int(text: &str, opt: &str) -> Option<i64> {
+    value_of(text, opt)?.parse().ok()
 }
 
 /// Undo the escapes [`quote`] writes.
