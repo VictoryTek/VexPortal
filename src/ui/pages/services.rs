@@ -19,7 +19,9 @@ use vexportal_ops::services::{self, Health, Reach, Service};
 type ServiceGroup = (String, adw::PreferencesGroup, Vec<(adw::ActionRow, String)>);
 
 /// Per-service actions, which live on each service's own page.
-const PER_SERVICE: [&str; 6] = [
+const PER_SERVICE: [&str; 8] = [
+    "beszel-setup",
+    "beszel-status",
     "service-restart",
     "service-enable",
     "service-disable",
@@ -245,6 +247,16 @@ fn detail(app: &Rc<App>, window: &Window, service: &'static Service) -> adw::Nav
     } else if let Some(action) = app.visible("service-enable") {
         let group = adw::PreferencesGroup::new();
         group.add(&ui::action_row(app, window, action, &preset));
+        page.add(&group);
+    }
+
+    if on && name == "beszel-agent" {
+        let group = adw::PreferencesGroup::builder().title("Beszel").build();
+        for id in ["beszel-setup", "beszel-status"] {
+            if let Some(action) = app.visible(id) {
+                group.add(&ui::action_row(app, window, action, &[]));
+            }
+        }
         page.add(&group);
     }
 

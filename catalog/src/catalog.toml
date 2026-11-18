@@ -859,6 +859,47 @@ rebuild = true
   format = "url"
 
 [[action]]
+id = "beszel-setup"
+backend = "native"
+command = ["beszel", "setup"]
+implements = "_beszel-setup"
+title = "Set Up the Beszel Agent"
+blurb = "In the Beszel hub choose Add System, keep the dialog open, and paste its Key and Token here before you click its Add System. Saved for the agent in a file only root can read."
+icon = "network-server-symbolic"
+page = "services"
+group = "Beszel"
+roles = ["server", "headless-server"]
+risk = "medium"
+confirm = "If this agent was set up before, its saved key and token are replaced and the agent restarts."
+
+  [[action.params]]
+  name = "key"
+  label = "Key"
+  help = "The hub's public key, starting with ssh-."
+  required = true
+  widget = "text"
+  format = "ssh-key"
+
+  [[action.params]]
+  name = "token"
+  label = "Token"
+  required = true
+  widget = "secret"
+
+[[action]]
+id = "beszel-status"
+backend = "native"
+command = ["beszel", "status"]
+implements = "_beszel-status"
+title = "Beszel Agent Status"
+blurb = "Whether the agent is enabled, configured, running and listening, with its last log lines."
+icon = "task-due-symbolic"
+page = "services"
+group = "Beszel"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[action]]
 id = "plex-pass-enable"
 backend = "native"
 command = ["plex-pass", "enable"]
@@ -1203,17 +1244,16 @@ mode_reason = "It resets your own settings database, so it has to run as you."
 
 [[action]]
 id = "secrets-init"
+backend = "native"
 command = ["secrets-init"]
 implements = "secrets-init"
 title = "Set Up Encrypted Secrets"
-blurb = "Guided one-time setup for sops-nix secrets: generate this host's age key and print the .sops.yaml snippet to add to the repo."
+blurb = "One-time setup for sops-nix secrets: create this host's age key and show the public key and the .sops.yaml rule to add to the repo. An existing key is kept."
 icon = "dialog-password-symbolic"
 page = "tools"
 group = "This Machine"
 roles = ["server", "headless-server"]
 risk = "medium"
-mode = "terminal"
-mode_reason = "A guided setup that prints keys and instructions to act on."
 
 # ─────────────────────────────── Not surfaced ───────────────────────────────
 # Public justfile recipes VexPortal deliberately leaves to the CLI. Listed here so the

@@ -542,16 +542,16 @@ pub fn default_url(service: &Service, text: &str, hostname: &str) -> Option<Stri
 
 // ────────────────────────────── Operations ──────────────────────────────
 
-fn secrets_dir(nixos_dir: &Path) -> PathBuf {
+pub(crate) fn secrets_dir(nixos_dir: &Path) -> PathBuf {
     nixos_dir.join("secrets")
 }
 
-fn services_path(nixos_dir: &Path) -> PathBuf {
+pub(crate) fn services_path(nixos_dir: &Path) -> PathBuf {
     nixos_dir.join(SERVICES_FILE)
 }
 
 /// Server services exist only on the two server roles.
-fn require_server<R: Runner>(ctx: &Ctx<'_, R>) -> Result<(), i32> {
+pub(crate) fn require_server<R: Runner>(ctx: &Ctx<'_, R>) -> Result<(), i32> {
     let Some(variant) = read_variant(ctx.nixos_dir) else {
         return Err(fail(
             ctx.sink,
@@ -693,7 +693,7 @@ fn generated(
 
 /// A secret that goes into an environment file: one line, no control characters, no
 /// whitespace.
-fn plain_secret(value: &str) -> bool {
+pub(crate) fn plain_secret(value: &str) -> bool {
     !value.is_empty() && !value.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 
@@ -1068,8 +1068,12 @@ async fn enable_inner<R: Runner>(ctx: &Ctx<'_, R>) -> Result<(), i32> {
 }
 
 /// The secrets folder: there, and for root alone.
-fn ensure_private_dir(dir: &Path) -> std::io::Result<()> {
+pub(crate) fn ensure_private_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
+    // A link here would send the chmod and the writes somewhere else.
+    if std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(std::io::Error::other("it is a symbolic link"));
+    }
     std::fs::create_dir_all(dir)?;
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
 }
@@ -2002,6 +2006,21 @@ mod tests {
             std::fs::read_to_string(&file).unwrap(),
             "API_KEY=old
 "
+        );
+    }
+
+    #[test]
+    fn a_secrets_folder_that_is_a_link_is_refused_rather_than_followed() {
+        let mut kit = server_kit(&[("service", "cloudflare-ddns"), ("zone", "example.com")]);
+        let elsewhere = kit.root.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, kit.nixos.join("secrets")).unwrap();
+        kit.secrets.insert("api_token".into(), Secret::new("tok"));
+        assert_eq!(run_enable(&kit), 1);
+        assert_eq!(
+            std::fs::read_dir(&elsewhere).unwrap().count(),
+            0,
+            "nothing written through the link"
         );
     }
 

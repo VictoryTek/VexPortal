@@ -40,6 +40,7 @@ impl Format {
             Format::Email => "an e-mail address such as `you@example.com`",
             Format::Domain => "a domain such as `example.com`",
             Format::Subdomain => "a subdomain such as `home` or `vpn.lab`",
+            Format::SshKey => "an SSH public key such as `ssh-ed25519 AAAA...`",
             Format::ResticRepo => {
                 "a path such as `/mnt/backup/restic-repo`, or an address such as `sftp:user@host:/path`"
             }
@@ -72,6 +73,7 @@ impl Format {
             Format::Domain => is_domain(value),
             Format::Subdomain => is_subdomain(value),
             Format::ResticRepo => is_restic_repo(value),
+            Format::SshKey => is_ssh_key(value),
         };
 
         if ok {
@@ -256,6 +258,17 @@ fn is_subdomain(v: &str) -> bool {
     v.split('.').all(is_label)
 }
 
+/// `ssh-<type> <base64> [comment]`: only the characters a public key line has, which keeps
+/// anything that could end a line or a value out of the file it is written to.
+fn is_ssh_key(v: &str) -> bool {
+    v.starts_with("ssh-")
+        && !v.ends_with(' ')
+        && v.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, '+' | '/' | '=' | '-' | '_' | '@' | '.' | ':' | ' ')
+        })
+}
+
 /// `scheme://user:password@host/...`: a secret in the address.
 fn has_credentials(v: &str) -> bool {
     let Some((_, rest)) = v.split_once("://") else {
@@ -406,6 +419,22 @@ mod tests {
     }
 
     #[test]
+    fn ssh_keys() {
+        assert!(Format::SshKey
+            .validate("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc+/= hub@host")
+            .is_ok());
+        for bad in [
+            "AAAA",
+            "ssh-ed25519 AAAA\"x",
+            "ssh-ed25519 AAAA;x",
+            "ssh-rsa A\tB",
+            "ssh-rsa A ",
+        ] {
+            assert!(Format::SshKey.validate(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn slugs() {
         assert!(Format::Slug.validate("jellyfin").is_ok());
         assert!(Format::Slug.validate("nginx-proxy-manager").is_ok());
@@ -443,6 +472,7 @@ mod tests {
                 Format::Domain,
                 Format::Subdomain,
                 Format::ResticRepo,
+                Format::SshKey,
             ] {
                 assert!(
                     format.validate(probe).is_err(),

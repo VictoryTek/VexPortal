@@ -148,6 +148,8 @@ pub enum Format {
     Subdomain,
     /// A restic repository: an absolute path, or `sftp:`, `rest:`, `s3:` and the like.
     ResticRepo,
+    /// An SSH public key line such as `ssh-ed25519 AAAA... comment`.
+    SshKey,
 }
 
 /// How the GUI renders a parameter, and what the daemon will accept for it.

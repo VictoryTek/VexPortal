@@ -15,6 +15,7 @@
 //! bus is not trusted to have asked the GUI first.
 
 pub mod activate;
+pub mod beszel;
 pub mod bootloader;
 pub mod features;
 pub mod fsutil;
@@ -24,6 +25,7 @@ pub mod rebuild;
 pub mod runner;
 pub mod services;
 pub mod sidefile;
+pub mod sops;
 pub mod system;
 pub mod tailscale;
 pub mod upgrade;
@@ -83,6 +85,9 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "service-restart",
     "plex-pass-enable",
     "plex-pass-disable",
+    "beszel-setup",
+    "beszel-status",
+    "secrets-init",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -146,6 +151,9 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "service-restart" => services::restart(ctx).await,
         "plex-pass-enable" => services::plex_pass(ctx, true).await,
         "plex-pass-disable" => services::plex_pass(ctx, false).await,
+        "beszel-setup" => beszel::setup(ctx).await,
+        "beszel-status" => beszel::status(ctx).await,
+        "secrets-init" => sops::init(ctx).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;
