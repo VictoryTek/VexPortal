@@ -17,6 +17,7 @@ enum Field {
     Text(adw::EntryRow),
     Path(Rc<std::cell::RefCell<Option<String>>>),
     Secret(adw::PasswordEntryRow),
+    Confirm(adw::EntryRow),
 }
 
 impl Field {
@@ -38,6 +39,8 @@ impl Field {
             Field::Text(row) => row.text().trim().to_string(),
             Field::Path(value) => value.borrow().clone().unwrap_or_default(),
             Field::Secret(row) => row.text().to_string(),
+            // Exactly what was typed: the daemon compares it without trimming.
+            Field::Confirm(row) => row.text().to_string(),
         }
     }
 }
@@ -108,7 +111,7 @@ pub fn present(app: &Rc<App>, window: &Window, action: &Action, preset: HashMap<
             if let Some(missing) = action
                 .params
                 .iter()
-                .find(|p| p.required && !args.contains_key(&p.name))
+                .find(|p| p.required && p.confirm().is_none() && !args.contains_key(&p.name))
             {
                 let alert = adw::AlertDialog::new(
                     Some("Missing information"),
@@ -117,6 +120,27 @@ pub fn present(app: &Rc<App>, window: &Window, action: &Action, preset: HashMap<
                 alert.add_response("ok", "OK");
                 alert.present(Some(window.root()));
                 return;
+            }
+
+            // The daemon checks the typed phrase too; this points at the field first.
+            for param in action.params.iter().filter(|p| p.confirm().is_some()) {
+                let (expect, expect_param) = param.confirm().unwrap_or_default();
+                let expected = match (expect, expect_param) {
+                    (Some(phrase), _) => phrase.to_string(),
+                    (None, Some(other)) => args.get(other).cloned().unwrap_or_default(),
+                    (None, None) => String::new(),
+                };
+                if expected.is_empty() || args.get(&param.name) != Some(&expected) {
+                    let alert = adw::AlertDialog::new(
+                        Some("Not confirmed"),
+                        Some(&format!(
+                            "Type `{expected}` exactly in the confirmation box to go ahead."
+                        )),
+                    );
+                    alert.add_response("ok", "OK");
+                    alert.present(Some(window.root()));
+                    return;
+                }
             }
 
             dialog.close();
@@ -153,6 +177,11 @@ fn build_field(app: &Rc<App>, window: &Window, param: &Param) -> (gtk::Widget, F
                 row.set_tooltip_text(Some(help));
             }
             (row.clone().upcast(), Field::Secret(row))
+        }
+        Widget::Confirm { .. } => {
+            let row = adw::EntryRow::builder().title(&param.label).build();
+            row.set_tooltip_text(Some("The action only runs when this matches exactly."));
+            (row.clone().upcast(), Field::Confirm(row))
         }
     }
 }

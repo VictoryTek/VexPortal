@@ -41,6 +41,7 @@ impl Format {
             Format::Domain => "a domain such as `example.com`",
             Format::Subdomain => "a subdomain such as `home` or `vpn.lab`",
             Format::SshKey => "an SSH public key such as `ssh-ed25519 AAAA...`",
+            Format::JobName => "a job name such as `tv`: letters, digits, dots, dashes or underscores",
             Format::ResticRepo => {
                 "a path such as `/mnt/backup/restic-repo`, or an address such as `sftp:user@host:/path`"
             }
@@ -74,6 +75,7 @@ impl Format {
             Format::Subdomain => is_subdomain(value),
             Format::ResticRepo => is_restic_repo(value),
             Format::SshKey => is_ssh_key(value),
+            Format::JobName => is_job_name(value),
         };
 
         if ok {
@@ -102,6 +104,15 @@ fn is_slug(v: &str) -> bool {
     v.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
         && v.chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-' | '_'))
+}
+
+/// What `nas-sync-<name>.service` can be named after: the `[A-Za-z0-9][A-Za-z0-9._-]*`
+/// the justfile accepted, at most 64 characters.
+fn is_job_name(v: &str) -> bool {
+    v.len() <= 64
+        && v.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
 fn is_hostname(v: &str) -> bool {
@@ -445,6 +456,16 @@ mod tests {
     }
 
     #[test]
+    fn job_names_keep_the_case_the_host_gave_them() {
+        for ok in ["tv", "Media-Mirror", "a.b_c-1", "4k"] {
+            assert!(Format::JobName.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["", "-tv", ".tv", "a b", "tv/x", "tv;x", &"a".repeat(65)] {
+            assert!(Format::JobName.validate(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn shell_metacharacters_are_rejected_everywhere() {
         // The daemon never uses a shell, but a rejected value can never reach a
         // recipe body that interpolates `{{param}}` into bash either.
@@ -473,6 +494,7 @@ mod tests {
                 Format::Subdomain,
                 Format::ResticRepo,
                 Format::SshKey,
+                Format::JobName,
             ] {
                 assert!(
                     format.validate(probe).is_err(),

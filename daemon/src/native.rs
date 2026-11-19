@@ -25,6 +25,9 @@ use zbus::Connection;
 /// How long a cancelled command has to exit on SIGTERM before it is killed.
 const GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// How long a cleanup command may take, such as restarting a service after a cancel.
+const CLEANUP_LIMIT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Spawns real programs for an operation, and stops them if the job is cancelled.
 pub struct TokioRunner {
     cancel: CancellationToken,
@@ -228,6 +231,36 @@ impl Runner for TokioRunner {
             stdout: String::from_utf8_lossy(&out).into_owned(),
             stderr: String::from_utf8_lossy(&err).into_owned(),
         })
+    }
+
+    async fn cleanup(&self, cmd: &Cmd) -> Result<Output, RunError> {
+        // Deliberately not tied to the cancel token: this undoes what a cancelled job
+        // changed. The time limit keeps a stuck command from holding the job open.
+        let (child, mut guard) = spawn(cmd)?;
+        match tokio::time::timeout(CLEANUP_LIMIT, child.wait_with_output()).await {
+            Ok(Ok(output)) => {
+                guard.disarm();
+                Ok(Output {
+                    code: output.status.code().unwrap_or(-1),
+                    stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                    stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                })
+            }
+            Ok(Err(source)) => Err(RunError::Spawn {
+                program: cmd.program.clone(),
+                source,
+            }),
+            Err(_) => {
+                guard.kill_group();
+                Err(RunError::Spawn {
+                    program: cmd.program.clone(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "the cleanup command did not finish in time",
+                    ),
+                })
+            }
+        }
     }
 
     async fn stream(&self, cmd: &Cmd, sink: &dyn Sink) -> Result<i32, RunError> {
@@ -659,6 +692,20 @@ mod tests {
             Err(RunError::Cancelled)
         ));
         assert!(!marker.exists(), "the command ran after the cancel");
+    }
+
+    #[tokio::test]
+    async fn cleanup_still_runs_after_the_job_was_cancelled() {
+        let dir = TempDir::new();
+        let marker = dir.join("restarted");
+        let token = CancellationToken::new();
+        token.cancel();
+        let runner = TokioRunner::new(token);
+        let cmd = sh(&format!("echo back > '{}'", marker.display()));
+
+        let out = runner.cleanup(&cmd).await.expect("cleanup runs");
+        assert_eq!(out.code, 0);
+        assert!(marker.exists(), "the undo did not run");
     }
 
     #[tokio::test]

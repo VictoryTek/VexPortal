@@ -150,6 +150,8 @@ pub enum Format {
     ResticRepo,
     /// An SSH public key line such as `ssh-ed25519 AAAA... comment`.
     SshKey,
+    /// A job name from a host's own configuration, such as `tv` or `Media-Mirror`.
+    JobName,
 }
 
 /// How the GUI renders a parameter, and what the daemon will accept for it.
@@ -178,6 +180,16 @@ pub enum Widget {
     },
     /// A password. Never placed in argv — written to the recipe's stdin instead.
     Secret,
+    /// A phrase typed to confirm a destructive action. The daemon refuses the request
+    /// unless it matches, so a client that skips the question cannot skip the check.
+    /// Give either the fixed phrase (`expect`) or the name of another parameter whose
+    /// value is the phrase (`expect_param`), such as the pool to destroy.
+    Confirm {
+        #[serde(default)]
+        expect: Option<String>,
+        #[serde(default)]
+        expect_param: Option<String>,
+    },
 }
 
 fn default_format() -> Format {
@@ -217,6 +229,20 @@ impl Param {
             Widget::ChoiceDynamic { .. } => false,
             Widget::Text { format } => matches!(format, Format::AbsPath | Format::FlakeRef),
             Widget::Path { .. } | Widget::Secret => true,
+            Widget::Confirm { expect, .. } => expect
+                .as_deref()
+                .is_none_or(|e| e.contains(char::is_whitespace)),
+        }
+    }
+
+    /// The typed-confirmation settings, if this is that kind of parameter.
+    pub fn confirm(&self) -> Option<(Option<&str>, Option<&str>)> {
+        match &self.widget {
+            Widget::Confirm {
+                expect,
+                expect_param,
+            } => Some((expect.as_deref(), expect_param.as_deref())),
+            _ => None,
         }
     }
 }
@@ -432,6 +458,43 @@ impl Catalog {
                     ));
                 }
             }
+            for param in &action.params {
+                let Some((expect, expect_param)) = param.confirm() else {
+                    continue;
+                };
+                if !action.is_native() {
+                    return invalid(format!(
+                        "action `{id}`: `{}` is a typed confirmation, which only a native action can check",
+                        param.name
+                    ));
+                }
+                if !param.required {
+                    return invalid(format!(
+                        "action `{id}`: confirmation `{}` must be required",
+                        param.name
+                    ));
+                }
+                match (expect, expect_param) {
+                    (Some(phrase), None) if !phrase.is_empty() => {}
+                    (None, Some(other)) => {
+                        let target = action.param(other);
+                        if other == param.name
+                            || target.is_none_or(|t| t.is_secret() || t.confirm().is_some())
+                        {
+                            return invalid(format!(
+                                "action `{id}`: confirmation `{}` must name another plain parameter, not `{other}`",
+                                param.name
+                            ));
+                        }
+                    }
+                    _ => {
+                        return invalid(format!(
+                            "action `{id}`: confirmation `{}` needs exactly one of `expect` and `expect_param`",
+                            param.name
+                        ))
+                    }
+                }
+            }
             // A required parameter after an optional one cannot be expressed
             // positionally: `just` would bind the value to the wrong slot.
             // A native operation reads its answers by name, so order does not matter.
@@ -539,6 +602,41 @@ mod tests {
         let err = single("command = [\"a\"]\nrisk = \"destructive\"\n").unwrap_err();
         assert!(err.to_string().contains("confirm"), "{err}");
         single("command = [\"a\"]\nrisk = \"destructive\"\nconfirm = \"Sure?\"\n").unwrap();
+    }
+
+    fn confirming(param: &str) -> Result<Catalog, CatalogError> {
+        single(&format!(
+            "risk = \"destructive\"\nconfirm = \"Sure?\"\nbackend = \"native\"\n\
+             [[action.params]]\nname = \"pool\"\nlabel = \"Pool\"\nrequired = true\nwidget = \"text\"\n\
+             [[action.params]]\nname = \"typed\"\nlabel = \"Confirm\"\nwidget = \"confirm\"\n{param}"
+        ))
+    }
+
+    #[test]
+    fn a_typed_confirmation_names_its_phrase_exactly_one_way() {
+        confirming("required = true\nexpect = \"destroy\"\n").unwrap();
+        confirming("required = true\nexpect_param = \"pool\"\n").unwrap();
+        for bad in [
+            "required = true\n",
+            "required = true\nexpect = \"x\"\nexpect_param = \"pool\"\n",
+            "required = true\nexpect = \"\"\n",
+            "required = true\nexpect_param = \"typed\"\n",
+            "required = true\nexpect_param = \"nope\"\n",
+            "expect = \"destroy\"\n",
+        ] {
+            assert!(confirming(bad).is_err(), "accepted: {bad}");
+        }
+    }
+
+    #[test]
+    fn only_a_native_action_can_hold_a_typed_confirmation() {
+        let err = single(
+            "command = [\"a\"]\nrisk = \"destructive\"\nconfirm = \"Sure?\"\n\
+             [[action.params]]\nname = \"t\"\nlabel = \"T\"\nrequired = true\n\
+             widget = \"confirm\"\nexpect = \"x\"\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("native"), "{err}");
     }
 
     #[test]

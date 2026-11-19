@@ -404,6 +404,13 @@ roles = ["desktop", "htpc", "server", "headless-server", "stateless"]
 risk = "destructive"
 confirm = "This deletes the systemd-boot fallback entry and its files. It only runs if this session actually booted via Limine, and there is no way back to systemd-boot without reinstalling it."
 
+  [[action.params]]
+  name = "confirm"
+  label = "Type cleanup to confirm"
+  required = true
+  widget = "confirm"
+  expect = "cleanup"
+
 [[action]]
 id = "set-hostname"
 backend = "native"
@@ -931,6 +938,7 @@ rebuild = true
 
 [[action]]
 id = "backup-now"
+backend = "native"
 command = ["backup-now"]
 implements = "backup-now"
 title = "Run Backup Now"
@@ -942,7 +950,28 @@ roles = ["server", "headless-server"]
 risk = "medium"
 
 [[action]]
+id = "backup-snapshots"
+backend = "native"
+command = ["backup-snapshots"]
+implements = "backup-snapshots"
+title = "List Backup Snapshots"
+blurb = "The newest restic snapshots, optionally for one service, so you can pick one to restore."
+icon = "view-list-symbolic"
+page = "storage"
+group = "Backups"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+  [[action.params]]
+  name = "name"
+  label = "Service"
+  help = "Leave empty to list every snapshot."
+  widget = "choice-dynamic"
+  source = "server-services"
+
+[[action]]
 id = "restore-service"
+backend = "native"
 command = ["restore-service"]
 implements = "restore-service"
 title = "Restore a Service"
@@ -969,8 +998,16 @@ confirm = "The service's current data is overwritten in place with the snapshot'
   widget = "text"
   format = "slug"
 
+  [[action.params]]
+  name = "confirm"
+  label = "Type the service name to confirm"
+  required = true
+  widget = "confirm"
+  expect_param = "name"
+
 [[action]]
 id = "nas-sync-status"
+backend = "native"
 command = ["nas-sync-status"]
 implements = "nas-sync-status"
 title = "NAS Sync Status"
@@ -983,6 +1020,7 @@ risk = "safe"
 
 [[action]]
 id = "nas-sync-now"
+backend = "native"
 command = ["nas-sync-now"]
 implements = "nas-sync-now"
 title = "Run NAS Sync Now"
@@ -999,10 +1037,11 @@ risk = "medium"
   help = "The job name from server-services.nix, for example tv."
   required = true
   widget = "text"
-  format = "slug"
+  format = "job-name"
 
 [[action]]
 id = "backup-plex"
+backend = "native"
 command = ["backup-plex"]
 implements = "backup-plex"
 title = "Back Up Plex"
@@ -1021,6 +1060,7 @@ risk = "medium"
 
 [[action]]
 id = "restore-plex"
+backend = "native"
 command = ["restore-plex"]
 implements = "restore-plex"
 title = "Restore Plex"
@@ -1038,6 +1078,13 @@ confirm = "This overwrites /var/lib/plex. The current contents are preserved as 
   required = true
   widget = "path"
   must_exist = true
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type plex to confirm"
+  required = true
+  widget = "confirm"
+  expect = "plex"
 
 [[action]]
 id = "zfs-pool"

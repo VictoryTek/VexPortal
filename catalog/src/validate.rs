@@ -102,6 +102,8 @@ pub enum ValidationError {
     },
     #[error("`{label}`: `{got}` is not one of the accepted values")]
     NotAChoice { label: String, got: String },
+    #[error("`{label}`: type `{expected}` exactly to confirm")]
+    ConfirmMismatch { label: String, expected: String },
 }
 
 /// Validate `answers` for an action the daemon runs, and produce an [`Invocation`].
@@ -195,12 +197,35 @@ fn invocation(
             continue;
         }
 
-        check_value(param, &value)?;
+        if param.confirm().is_none() {
+            check_value(param, &value)?;
+        }
         if let Widget::Path { must_exist: true } = param.widget {
             must_exist.push(value.clone());
         }
         named.insert(param.name.clone(), value.clone());
         argv.push(value);
+    }
+
+    // A typed confirmation is checked here, in the daemon's own validation, so a client
+    // that never asked the person cannot skip it. It compares against the answer to the
+    // parameter it names, which is why this waits until every answer is read.
+    for param in &action.params {
+        let Some((expect, expect_param)) = param.confirm() else {
+            continue;
+        };
+        let expected = match (expect, expect_param) {
+            (Some(phrase), _) => phrase.to_string(),
+            (None, Some(other)) => named.get(other).cloned().unwrap_or_default(),
+            (None, None) => String::new(),
+        };
+        let typed = named.get(&param.name).map(String::as_str).unwrap_or("");
+        if expected.is_empty() || typed != expected {
+            return Err(ValidationError::ConfirmMismatch {
+                label: param.label.clone(),
+                expected,
+            });
+        }
     }
 
     // `just` applies a recipe's own defaults for arguments that are simply absent, so
@@ -250,6 +275,7 @@ fn check_value(param: &Param, value: &str) -> Result<(), ValidationError> {
         Widget::Text { format } => format.validate(value).map_err(bad_value)?,
         Widget::Path { .. } => crate::Format::AbsPath.validate(value).map_err(bad_value)?,
         Widget::Secret => unreachable!("secrets are handled before check_value"),
+        Widget::Confirm { .. } => unreachable!("confirmations are checked after every answer"),
     }
     Ok(())
 }
@@ -311,6 +337,59 @@ mod tests {
     fn rejects_unknown_parameter_names() {
         let err = build(&catalog(), "rebuild", &answers(&[("wat", "1")])).unwrap_err();
         assert!(matches!(err, ValidationError::UnknownParam { .. }));
+    }
+
+    fn confirm_catalog() -> Catalog {
+        Catalog::parse(
+            "[[page]]\nid = \"p\"\ntitle = \"P\"\nicon = \"i\"\n\n\
+             [[action]]\nid = \"wipe\"\nbackend = \"native\"\ntitle = \"W\"\nblurb = \"b\"\n\
+             icon = \"i\"\npage = \"p\"\ngroup = \"g\"\nroles = [\"server\"]\n\
+             risk = \"destructive\"\nconfirm = \"Sure?\"\n\
+             [[action.params]]\nname = \"pool\"\nlabel = \"Pool\"\nrequired = true\nwidget = \"text\"\n\
+             [[action.params]]\nname = \"typed\"\nlabel = \"Confirm\"\nrequired = true\n\
+             widget = \"confirm\"\nexpect_param = \"pool\"\n\
+             [[action.params]]\nname = \"word\"\nlabel = \"Word\"\nrequired = true\n\
+             widget = \"confirm\"\nexpect = \"erase\"\n",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_destructive_request_is_refused_unless_the_phrase_was_typed() {
+        let catalog = confirm_catalog();
+        let ok = answers(&[("pool", "tank"), ("typed", "tank"), ("word", "erase")]);
+        assert!(build(&catalog, "wipe", &ok).is_ok());
+
+        for bad in [
+            // Typed the wrong pool.
+            answers(&[("pool", "tank"), ("typed", "other"), ("word", "erase")]),
+            // Close is not enough: no trimming, no case folding.
+            answers(&[("pool", "tank"), ("typed", "tank "), ("word", "erase")]),
+            answers(&[("pool", "tank"), ("typed", "tank"), ("word", "Erase")]),
+            // A client that never asked leaves it out.
+            answers(&[("pool", "tank")]),
+            answers(&[("pool", "tank"), ("typed", "tank")]),
+        ] {
+            let err = build(&catalog, "wipe", &bad).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    ValidationError::ConfirmMismatch { .. } | ValidationError::Missing { .. }
+                ),
+                "{err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_typed_phrase_is_part_of_the_audit_line() {
+        let inv = build(
+            &confirm_catalog(),
+            "wipe",
+            &answers(&[("pool", "tank"), ("typed", "tank"), ("word", "erase")]),
+        )
+        .unwrap();
+        assert_eq!(inv.audit_line(), "op wipe pool=tank typed=tank word=erase");
     }
 
     #[test]
@@ -512,9 +591,43 @@ widget = \"text\"
         let inv = build(
             &catalog(),
             "restore-plex",
-            &answers(&[("tarball", "/tmp/plex.tar.gz")]),
+            &answers(&[("tarball", "/tmp/plex.tar.gz"), ("confirm", "plex")]),
         )
         .unwrap();
         assert_eq!(inv.must_exist, ["/tmp/plex.tar.gz"]);
+    }
+
+    #[test]
+    fn every_destructive_native_action_that_deletes_data_asks_for_a_typed_phrase() {
+        // These are refused by the daemon unless the phrase is typed, whatever the GUI did.
+        let catalog = catalog();
+        for id in ["restore-plex", "restore-service", "bootloader-cleanup"] {
+            let action = catalog.action(id).unwrap();
+            assert!(
+                action.params.iter().any(|p| p.confirm().is_some()),
+                "`{id}` has no typed confirmation"
+            );
+        }
+        let err = build(
+            &catalog,
+            "restore-plex",
+            &answers(&[("tarball", "/tmp/p.tgz")]),
+        );
+        assert!(err.is_err());
+        let err = build(
+            &catalog,
+            "restore-service",
+            &answers(&[("name", "jellyfin"), ("confirm", "plex")]),
+        );
+        assert!(matches!(
+            err.unwrap_err(),
+            ValidationError::ConfirmMismatch { .. }
+        ));
+        build(
+            &catalog,
+            "restore-service",
+            &answers(&[("name", "jellyfin"), ("confirm", "jellyfin")]),
+        )
+        .unwrap();
     }
 }

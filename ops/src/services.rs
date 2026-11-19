@@ -111,7 +111,7 @@ pub fn names() -> Vec<&'static str> {
 }
 
 /// The arr components the `vexos.server.arr.enable` meta-flag turns on by default.
-const ARR_META: [&str; 5] = ["sabnzbd", "sonarr", "radarr", "lidarr", "prowlarr"];
+pub(crate) const ARR_META: [&str; 5] = ["sabnzbd", "sonarr", "radarr", "lidarr", "prowlarr"];
 
 impl Service {
     /// `vexos.server.<option>.<leaf>`, for this service's own options.

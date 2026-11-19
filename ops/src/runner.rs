@@ -137,6 +137,14 @@ pub trait Runner: Send + Sync {
         cmd: &Cmd,
         sink: &dyn Sink,
     ) -> impl Future<Output = Result<i32, RunError>> + Send;
+
+    /// Run a short command that puts back what the job changed, such as restarting a
+    /// service the job stopped. Unlike [`Runner::run`] it still runs after the job was
+    /// cancelled, because that is exactly when it is needed. Only for undoing; never for
+    /// doing more work.
+    fn cleanup(&self, cmd: &Cmd) -> impl Future<Output = Result<Output, RunError>> + Send {
+        self.run(cmd)
+    }
 }
 
 pub mod testing {

@@ -15,12 +15,14 @@
 //! bus is not trusted to have asked the GUI first.
 
 pub mod activate;
+pub mod backup;
 pub mod beszel;
 pub mod bootloader;
 pub mod features;
 pub mod fsutil;
 pub mod gitrepo;
 pub mod nixedit;
+pub mod plex;
 pub mod rebuild;
 pub mod runner;
 pub mod services;
@@ -88,6 +90,13 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "beszel-setup",
     "beszel-status",
     "secrets-init",
+    "backup-now",
+    "backup-snapshots",
+    "restore-service",
+    "nas-sync-status",
+    "nas-sync-now",
+    "backup-plex",
+    "restore-plex",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -154,6 +163,13 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "beszel-setup" => beszel::setup(ctx).await,
         "beszel-status" => beszel::status(ctx).await,
         "secrets-init" => sops::init(ctx).await,
+        "backup-now" => backup::backup_now(ctx).await,
+        "backup-snapshots" => backup::snapshots(ctx).await,
+        "restore-service" => backup::restore_service(ctx).await,
+        "nas-sync-status" => backup::nas_sync_status(ctx).await,
+        "nas-sync-now" => backup::nas_sync_now(ctx).await,
+        "backup-plex" => plex::backup(ctx).await,
+        "restore-plex" => plex::restore(ctx).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;
@@ -185,7 +201,7 @@ pub(crate) async fn capture<R: Runner>(ctx: &Ctx<'_, R>, cmd: &Cmd) -> Result<ru
         .map_err(|e| run_error(ctx.sink, e))
 }
 
-fn run_error(sink: &dyn Sink, error: RunError) -> i32 {
+pub(crate) fn run_error(sink: &dyn Sink, error: RunError) -> i32 {
     match error {
         RunError::Cancelled => {
             sink.error("Cancelled.");
@@ -228,7 +244,8 @@ mod tests {
         assert!(is_native("switch"));
         assert!(is_native("feature-enable"));
         assert!(is_native("service-restart"));
-        assert!(!is_native("backup-now"));
+        assert!(is_native("restore-service"));
+        assert!(!is_native("zfs-pool"));
         assert!(!is_query("feature-list"));
     }
 
