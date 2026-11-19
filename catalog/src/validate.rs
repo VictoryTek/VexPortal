@@ -517,7 +517,7 @@ widget = \"text\"
 
     #[test]
     fn terminal_actions_cannot_be_run_by_the_daemon() {
-        let err = build(&catalog(), "zfs-pool", &answers(&[])).unwrap_err();
+        let err = build(&catalog(), "reset-defaults", &answers(&[])).unwrap_err();
         assert!(matches!(err, ValidationError::TerminalOnly(_)));
     }
 
@@ -548,6 +548,61 @@ widget = \"text\"
         assert_eq!(inv.named["agent"], "codex");
         assert!(build_for_user(&c, "ai-pick", &answers(&[("agent", "vim")])).is_err());
         assert!(build_for_user(&c, "ai-pick", &answers(&[])).is_err());
+    }
+
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn every_zfs_action_that_erases_something_wants_the_pool_name_typed() {
+        let c = catalog();
+        let disks = [("disks", "ata-A")];
+        let cases: [(&str, Vec<(&str, &str)>, &str); 5] = [
+            (
+                "zfs-create",
+                vec![("name", "tank"), ("topology", "single"), ("disks", "ata-A")],
+                "name",
+            ),
+            ("zfs-destroy", vec![("pool", "tank")], "pool"),
+            (
+                "zfs-replace",
+                [("pool", "tank"), ("old", "/dev/sda1")]
+                    .into_iter()
+                    .chain(disks)
+                    .collect(),
+                "pool",
+            ),
+            (
+                "zfs-add",
+                [("pool", "tank"), ("layout", "single")]
+                    .into_iter()
+                    .chain(disks)
+                    .collect(),
+                "pool",
+            ),
+            (
+                "zfs-attach",
+                [("pool", "tank"), ("existing", "/dev/sda1")]
+                    .into_iter()
+                    .chain(disks)
+                    .collect(),
+                "pool",
+            ),
+        ];
+        for (id, base, _) in &cases {
+            let without = build(&c, id, &answers(base));
+            assert!(without.is_err(), "{id} ran with no confirmation");
+            let mut wrong = base.clone();
+            wrong.push(("confirm", "tonk"));
+            assert!(
+                matches!(
+                    build(&c, id, &answers(&wrong)),
+                    Err(ValidationError::ConfirmMismatch { .. })
+                ),
+                "{id} accepted a wrong confirmation"
+            );
+            let mut right = base.clone();
+            right.push(("confirm", "tank"));
+            assert!(build(&c, id, &answers(&right)).is_ok(), "{id}");
+        }
     }
 
     #[test]

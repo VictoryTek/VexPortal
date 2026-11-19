@@ -135,6 +135,15 @@ pub enum Format {
     ProgramName,
     /// A systemd unit name or `rebuild`, as `vexos-ai diagnose` takes it.
     UnitTarget,
+    /// A ZFS pool name: a letter, then letters, digits and `. _ : -`.
+    PoolName,
+    /// A disk of a pool as `zpool status -P` prints it: an absolute `/dev` path, or the
+    /// number of a disk that is missing.
+    VdevName,
+    /// Comma-separated names from `/dev/disk/by-id`.
+    DiskIdList,
+    /// A Proxmox storage ID.
+    StorageId,
     /// An `http://` or `https://` address a person types, with no space, quote,
     /// backslash, `$` or `;` in it.
     Url,

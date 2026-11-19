@@ -147,9 +147,9 @@ mod tests {
 
     #[test]
     fn the_external_fallback_wraps_the_same_argv() {
-        let inv = invocation("zfs-pool", &[]);
+        let inv = invocation("reset-defaults", &[]);
         let command = argv(&inv).unwrap();
-        let external = external_argv("ZFS Pool Manager", &command);
+        let external = external_argv("Reset Defaults", &command);
         assert_eq!(external[0], "xdg-terminal-exec");
         let split = external.iter().position(|a| a == "--").unwrap();
         assert_eq!(external[split + 1..], command[..]);
@@ -171,7 +171,7 @@ mod tests {
             ["vexos-ai", "diagnose"]
         );
         // A recipe action still goes through `just`.
-        assert_eq!(argv(&invocation("zfs-pool", &[])).unwrap()[0], "just");
+        assert_eq!(argv(&invocation("reset-defaults", &[])).unwrap()[0], "just");
     }
 
     #[test]

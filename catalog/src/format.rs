@@ -35,6 +35,10 @@ impl Format {
             Format::FlakeRef => "a path or flake reference such as `.` or `github:owner/repo`",
             Format::ProgramName => "a program name such as `firefox`",
             Format::UnitTarget => "a systemd unit such as `sshd.service`, or `rebuild`",
+            Format::PoolName => "a pool name such as `tank`: a letter, then letters, digits and . _ : -",
+            Format::VdevName => "a disk path under /dev, or the number of a missing disk",
+            Format::DiskIdList => "disk names from /dev/disk/by-id, separated by commas",
+            Format::StorageId => "a storage ID such as `vm-store`",
             Format::Url => "an address starting with http:// or https://",
             Format::Ipv4 => "an IPv4 address such as `192.168.1.100`",
             Format::Interface => "a network interface name such as `enp2s0`",
@@ -57,7 +61,13 @@ impl Format {
         if value.is_empty() {
             return Err(FormatError::Empty);
         }
-        if value.len() > MAX_LEN {
+        // A list of disks is longer than any single value: up to 64 names of 200 each.
+        let limit = if self == Format::DiskIdList {
+            64 * 201
+        } else {
+            MAX_LEN
+        };
+        if value.len() > limit {
             return Err(FormatError::TooLong);
         }
         if value.chars().any(|c| c.is_control()) {
@@ -73,6 +83,10 @@ impl Format {
             Format::FlakeRef => is_flake_ref(value),
             Format::ProgramName => is_program_name(value),
             Format::UnitTarget => is_unit_target(value),
+            Format::PoolName => is_pool_name(value),
+            Format::VdevName => is_vdev_name(value),
+            Format::DiskIdList => is_disk_id_list(value),
+            Format::StorageId => is_storage_id(value),
             Format::Url => is_url(value),
             Format::Ipv4 => is_ipv4(value),
             Format::Interface => is_interface(value),
@@ -234,6 +248,48 @@ fn is_unit_target(v: &str) -> bool {
         && v.starts_with(|c: char| c.is_ascii_alphanumeric())
         && v.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '.' | '_' | ':' | '-'))
+}
+
+/// The shape zpool accepts. Its reserved words are checked where the pool is created.
+fn is_pool_name(v: &str) -> bool {
+    v.len() <= 200
+        && v.starts_with(|c: char| c.is_ascii_alphabetic())
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+}
+
+/// A device path as `zpool status -P` prints it, or the number of a missing disk.
+fn is_vdev_name(v: &str) -> bool {
+    if v.chars().all(|c| c.is_ascii_digit()) {
+        return v.len() <= 25;
+    }
+    v.starts_with("/dev/")
+        && v.len() <= 300
+        && !v.split('/').any(|part| part == "..")
+        && v.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '+' | '@' | '=' | '/' | '-')
+        })
+}
+
+fn is_disk_id(v: &str) -> bool {
+    !v.is_empty()
+        && v.len() <= 200
+        && v.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '+' | '@' | '=' | '-')
+        })
+}
+
+/// One or more `/dev/disk/by-id` names, comma-separated, at most 64.
+fn is_disk_id_list(v: &str) -> bool {
+    let parts: Vec<&str> = v.split(',').collect();
+    parts.len() <= 64 && parts.iter().all(|p| is_disk_id(p))
+}
+
+fn is_storage_id(v: &str) -> bool {
+    v.len() <= 64
+        && v.starts_with(|c: char| c.is_ascii_alphabetic())
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 /// What follows `http://` or `https://`: only characters that are safe inside a Nix
@@ -644,6 +700,45 @@ mod tests {
         assert!(Format::ProgramName.validate("..").is_err());
         assert!(Format::ProgramName.validate("a/b").is_err());
         assert!(Format::ProgramName.validate("-x").is_err());
+    }
+
+    #[test]
+    fn pool_disk_and_storage_names_are_closed_shapes() {
+        for ok in ["tank", "Tank-1", "a.b_c:d"] {
+            assert!(Format::PoolName.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["1tank", "-t", "a b", "a/b", "a;b", "$x"] {
+            assert!(Format::PoolName.validate(bad).is_err(), "{bad}");
+        }
+        for ok in ["/dev/disk/by-id/ata-A_1-part1", "/dev/sda", "1234567890123"] {
+            assert!(Format::VdevName.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "sda",
+            "/etc/passwd",
+            "/dev/../etc/x",
+            "/dev/a b",
+            "-f",
+            "12a",
+            "/dev/x;y",
+        ] {
+            assert!(Format::VdevName.validate(bad).is_err(), "{bad}");
+        }
+        for ok in ["ata-A", "ata-A,wwn-0x5000c500", "nvme-eui.0025:38"] {
+            assert!(Format::DiskIdList.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["a,,b", ",a", "a,", "ata A", "a/b", "../x", "a;b"] {
+            assert!(Format::DiskIdList.validate(bad).is_err(), "{bad}");
+        }
+        // Sixteen ordinary by-id names are longer than any single value may be.
+        let sixteen = vec!["ata-ST4000NM0035-1V4107_ZC12ABCD"; 16].join(",");
+        assert!(sixteen.len() > 512);
+        assert!(Format::DiskIdList.validate(&sixteen).is_ok());
+        let many = vec!["a"; 65].join(",");
+        assert!(Format::DiskIdList.validate(&many).is_err());
+        assert!(Format::StorageId.validate("vm-store").is_ok());
+        assert!(Format::StorageId.validate("-x").is_err());
+        assert!(Format::StorageId.validate("a b").is_err());
     }
 
     #[test]

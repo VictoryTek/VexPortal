@@ -1112,20 +1112,320 @@ confirm = "This overwrites /var/lib/plex. The current contents are preserved as 
   widget = "confirm"
   expect = "plex"
 
+# ZFS pools. The Storage page lists the imported pools and their disks itself and asks
+# for disks with a picker; every action that erases a disk is checked again by the daemon
+# against the disks that are really free at that moment, and asks for the pool's name.
+
 [[action]]
-id = "zfs-pool"
-command = ["zfs-pool"]
-implements = "zfs-pool"
-title = "ZFS Pool Manager"
-blurb = "Create, import, scrub or destroy ZFS pools, and replace or add disks."
+id = "zfs-create"
+backend = "native"
+title = "Create ZFS Pool"
+blurb = "Combine whole disks into a new pool. Every chosen disk is erased."
 icon = "drive-multidisk-symbolic"
 page = "storage"
-group = "Pools"
+group = "ZFS Pools"
 roles = ["server", "headless-server"]
 risk = "destructive"
-confirm = "The pool manager can erase whole disks. It asks you to choose disks and type a confirmation before erasing anything — read each step carefully."
-mode = "terminal"
-mode_reason = "A menu-driven wizard that walks through disks, layout and a typed confirmation."
+confirm = "The chosen disks are erased completely and cannot be recovered."
+rebuild = true
+
+  [[action.params]]
+  name = "name"
+  label = "Pool name"
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "topology"
+  label = "How the disks are combined"
+  required = true
+  widget = "choice"
+  choices = ["single", "mirror", "raidz1", "raidz2", "raidz3", "raid10"]
+
+  [[action.params]]
+  name = "disks"
+  label = "Disks"
+  required = true
+  widget = "text"
+  format = "disk-id-list"
+
+  [[action.params]]
+  name = "dataset"
+  label = "Create a child dataset for VM disks"
+  default = "yes"
+  widget = "choice"
+  choices = ["yes", "no"]
+
+  [[action.params]]
+  name = "storage_id"
+  label = "Proxmox storage ID"
+  help = "Optional. Adds the pool to Proxmox under this name, when Proxmox is running."
+  widget = "text"
+  format = "storage-id"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type the pool name to confirm"
+  required = true
+  widget = "confirm"
+  expect_param = "name"
+
+[[action]]
+id = "zfs-destroy"
+backend = "native"
+title = "Destroy ZFS Pool"
+blurb = "Permanently destroy a pool and everything in it."
+icon = "user-trash-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "The pool and all its data, datasets, VM disks and snapshots are destroyed. This cannot be undone."
+rebuild = true
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type the pool name to confirm"
+  required = true
+  widget = "confirm"
+  expect_param = "pool"
+
+[[action]]
+id = "zfs-import-list"
+backend = "native"
+title = "Find Importable Pools"
+blurb = "List the pools on the connected disks that can be imported. Changes nothing."
+icon = "system-search-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "safe"
+
+[[action]]
+id = "zfs-import"
+backend = "native"
+title = "Import ZFS Pool"
+blurb = "Bring an existing pool back after a reinstall or after moving its disks, and import it at every boot."
+icon = "document-open-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "medium"
+rebuild = true
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  help = "The name from Find Importable Pools."
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "force"
+  label = "Force the import"
+  help = "Only if the disks are not in use by another machine."
+  default = "no"
+  widget = "choice"
+  choices = ["no", "yes"]
+
+[[action]]
+id = "zfs-replace"
+backend = "native"
+title = "Replace a ZFS Disk"
+blurb = "Swap a failed or old disk for a new one. The new disk is erased."
+icon = "view-refresh-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "The new disk is erased, and the pool copies its data onto it."
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "old"
+  label = "Disk to replace"
+  required = true
+  widget = "text"
+  format = "vdev-name"
+
+  [[action.params]]
+  name = "disks"
+  label = "New disk"
+  required = true
+  widget = "text"
+  format = "disk-id-list"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type the pool name to confirm"
+  required = true
+  widget = "confirm"
+  expect_param = "pool"
+
+[[action]]
+id = "zfs-add"
+backend = "native"
+title = "Add Disks to a ZFS Pool"
+blurb = "Grow a pool with more disks. This is permanent: ZFS cannot remove them again."
+icon = "list-add-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "The chosen disks are erased and become a permanent part of the pool."
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "layout"
+  label = "How the new disks are added"
+  required = true
+  widget = "choice"
+  choices = ["mirror", "raidz1", "raidz2", "single"]
+
+  [[action.params]]
+  name = "disks"
+  label = "Disks"
+  required = true
+  widget = "text"
+  format = "disk-id-list"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type the pool name to confirm"
+  required = true
+  widget = "confirm"
+  expect_param = "pool"
+
+[[action]]
+id = "zfs-attach"
+backend = "native"
+title = "Attach a ZFS Mirror Disk"
+blurb = "Add another full copy of a disk. A single disk becomes a mirror. The new disk is erased."
+icon = "list-add-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "The new disk is erased, and the pool copies a disk's data onto it."
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "existing"
+  label = "Disk to copy"
+  required = true
+  widget = "text"
+  format = "vdev-name"
+
+  [[action.params]]
+  name = "disks"
+  label = "New disk"
+  required = true
+  widget = "text"
+  format = "disk-id-list"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type the pool name to confirm"
+  required = true
+  widget = "confirm"
+  expect_param = "pool"
+
+[[action]]
+id = "zfs-detach"
+backend = "native"
+title = "Detach a ZFS Mirror Disk"
+blurb = "Remove one disk from a mirror. The pool keeps its other copies."
+icon = "list-remove-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "medium"
+confirm = "The disk leaves its mirror. The pool keeps running on its other copies, with less protection."
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "disk"
+  label = "Disk"
+  required = true
+  widget = "text"
+  format = "vdev-name"
+
+[[action]]
+id = "zfs-scrub"
+backend = "native"
+title = "Scrub a ZFS Pool"
+blurb = "Read every block and repair bad data from the redundant copies, or stop a scrub that is running."
+icon = "emblem-synchronizing-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  required = true
+  widget = "text"
+  format = "pool-name"
+
+  [[action.params]]
+  name = "action"
+  label = "Scrub"
+  default = "start"
+  widget = "choice"
+  choices = ["start", "stop"]
+
+[[action]]
+id = "zfs-clear"
+backend = "native"
+title = "Clear ZFS Error Counters"
+blurb = "Reset a pool's read, write and checksum error counts after fixing the cause. It repairs nothing by itself."
+icon = "edit-clear-symbolic"
+page = "storage"
+group = "ZFS Pools"
+roles = ["server", "headless-server"]
+risk = "medium"
+confirm = "Only clear the counters after fixing the cause, such as a cable or a replaced disk."
+
+  [[action.params]]
+  name = "pool"
+  label = "Pool"
+  required = true
+  widget = "text"
+  format = "pool-name"
 
 [[action]]
 id = "mergerfs-pool"
@@ -1429,6 +1729,10 @@ reason = "Updates and upgrades are handled by Up, not VexPortal."
 [[excluded]]
 name = "update-all"
 reason = "Updates and upgrades are handled by Up, not VexPortal."
+
+[[excluded]]
+name = "zfs-pool"
+reason = "Replaced by the ZFS Pools group on the Storage page: the daemon creates, imports, destroys, replaces, adds, attaches, detaches, scrubs and clears pools, with a disk picker and a typed confirmation."
 
 [[excluded]]
 name = "deploy"

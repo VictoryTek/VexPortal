@@ -18,6 +18,7 @@ pub mod activate;
 pub mod backup;
 pub mod beszel;
 pub mod bootloader;
+pub mod disks;
 pub mod features;
 pub mod fsutil;
 pub mod gitrepo;
@@ -32,6 +33,7 @@ pub mod sops;
 pub mod system;
 pub mod tailscale;
 pub mod upgrade;
+pub mod zfs;
 
 use runner::{Cmd, RunError, Runner, Sink};
 use std::collections::BTreeMap;
@@ -100,6 +102,16 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "restore-plex",
     "remote-storage-attach",
     "remote-storage-detach",
+    "zfs-create",
+    "zfs-destroy",
+    "zfs-import-list",
+    "zfs-import",
+    "zfs-replace",
+    "zfs-add",
+    "zfs-attach",
+    "zfs-detach",
+    "zfs-scrub",
+    "zfs-clear",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -175,6 +187,16 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "restore-plex" => plex::restore(ctx).await,
         "remote-storage-attach" => remote::attach(ctx).await,
         "remote-storage-detach" => remote::detach(ctx).await,
+        "zfs-create" => zfs::create(ctx).await,
+        "zfs-destroy" => zfs::destroy(ctx).await,
+        "zfs-import-list" => zfs::import_list(ctx).await,
+        "zfs-import" => zfs::import(ctx).await,
+        "zfs-replace" => zfs::replace(ctx).await,
+        "zfs-add" => zfs::add(ctx).await,
+        "zfs-attach" => zfs::attach(ctx).await,
+        "zfs-detach" => zfs::detach(ctx).await,
+        "zfs-scrub" => zfs::scrub(ctx).await,
+        "zfs-clear" => zfs::clear(ctx).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;
