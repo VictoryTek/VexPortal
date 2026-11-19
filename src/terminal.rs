@@ -7,10 +7,12 @@
 //! directly: nothing here is ever handed to a shell.
 
 use crate::just::JUSTFILE;
+use crate::system::ai;
 use gtk::gdk;
 use vexportal_catalog::validate::Invocation;
+use vexportal_catalog::Backend;
 
-/// Where `just` runs, matching `cd /etc/nixos && just …`.
+/// Where the command runs, matching `cd /etc/nixos && …`.
 pub const WORKING_DIRECTORY: &str = "/etc/nixos";
 
 /// `just --justfile /etc/nixos/justfile --working-directory /etc/nixos <command> <args>`.
@@ -26,42 +28,41 @@ pub fn just_argv(invocation: &Invocation) -> Vec<String> {
     argv
 }
 
-/// What the terminal's child gets on top of the user's own environment.
-/// `vexos-ai` is told never to open a dialog of its own over VexPortal: an empty
-/// choice makes it exit 4 instead.
-pub fn environment(invocation: &Invocation) -> Vec<&'static str> {
-    let mut env = vec!["VEXPORTAL=1"];
-    if invocation.action.starts_with("ai-") {
-        env.push("VEXOS_AI_NONINTERACTIVE=1");
+/// What the terminal runs. A native action is the AI assistant's, which is the
+/// `vexos-ai` command itself with no recipe in between; anything else is a recipe. `None`
+/// for a native action that has no command, which only a catalog mistake can cause.
+pub fn argv(invocation: &Invocation) -> Option<Vec<String>> {
+    if invocation.backend == Backend::Native {
+        return ai::argv(&invocation.action, &invocation.named);
     }
-    env
+    Some(just_argv(invocation))
 }
 
-/// What a `vexos-ai` exit code means, for the `ai-*` actions.
-pub fn ai_exit_message(action: &str, code: i32) -> Option<&'static str> {
-    if !action.starts_with("ai-") {
+/// What the terminal's child gets on top of the user's own environment.
+pub fn environment() -> Vec<&'static str> {
+    vec!["VEXPORTAL=1"]
+}
+
+/// What a `vexos-ai` exit code means, for the assistant's own actions.
+pub fn ai_exit_message(action: &str, code: i32) -> Option<String> {
+    if !ai::is_assistant_action(action) {
         return None;
     }
-    match code {
-        2 => Some("That input was not valid."),
-        3 => Some("Not found: the assistant is not installed."),
-        4 => Some("It needs input that was not given."),
-        _ => None,
-    }
+    ai::exit_message(action, "The assistant", code)
 }
 
 /// The same command in the user's preferred terminal emulator, through the XDG
 /// terminal launcher — used only if the built-in terminal cannot start.
-pub fn external_argv(title: &str, invocation: &Invocation) -> Vec<String> {
+pub fn external_argv(title: &str, command: &[String]) -> Vec<String> {
     let mut argv = vec![
         "xdg-terminal-exec".to_string(),
         format!("--dir={WORKING_DIRECTORY}"),
         format!("--title={title}"),
-        // Keep the window open after the recipe ends so its last lines can be read.
+        // Keep the window open after the command ends so its last lines can be read.
         "--hold".to_string(),
         "--".to_string(),
     ];
-    argv.extend(just_argv(invocation));
+    argv.extend(command.iter().cloned());
     argv
 }
 
@@ -147,30 +148,50 @@ mod tests {
     #[test]
     fn the_external_fallback_wraps_the_same_argv() {
         let inv = invocation("zfs-pool", &[]);
-        let argv = external_argv("ZFS Pool Manager", &inv);
-        assert_eq!(argv[0], "xdg-terminal-exec");
-        let split = argv.iter().position(|a| a == "--").unwrap();
-        assert_eq!(argv[split + 1..], just_argv(&inv)[..]);
-        assert!(!argv.iter().any(|a| a == "-c" || a == "-lc"), "no shell");
+        let command = argv(&inv).unwrap();
+        let external = external_argv("ZFS Pool Manager", &command);
+        assert_eq!(external[0], "xdg-terminal-exec");
+        let split = external.iter().position(|a| a == "--").unwrap();
+        assert_eq!(external[split + 1..], command[..]);
+        assert!(
+            !external.iter().any(|a| a == "-c" || a == "-lc"),
+            "no shell"
+        );
     }
 
     #[test]
-    fn only_ai_actions_run_vexos_ai_non_interactively() {
-        let ai = environment(&invocation("ai-pick", &[("agent", "claude")]));
-        assert!(ai.contains(&"VEXOS_AI_NONINTERACTIVE=1") && ai.contains(&"VEXPORTAL=1"));
-        let other = environment(&invocation("zfs-pool", &[]));
-        assert_eq!(other, ["VEXPORTAL=1"]);
+    fn the_assistant_runs_vexos_ai_itself_and_never_just() {
+        assert_eq!(argv(&invocation("agent", &[])).unwrap(), ["vexos-ai"]);
+        assert_eq!(
+            argv(&invocation("diagnose", &[("target", "sshd.service")])).unwrap(),
+            ["vexos-ai", "diagnose", "sshd.service"]
+        );
+        assert_eq!(
+            argv(&invocation("diagnose", &[])).unwrap(),
+            ["vexos-ai", "diagnose"]
+        );
+        // A recipe action still goes through `just`.
+        assert_eq!(argv(&invocation("zfs-pool", &[])).unwrap()[0], "just");
+    }
+
+    #[test]
+    fn the_terminal_adds_only_its_own_marker_to_the_environment() {
+        assert_eq!(environment(), ["VEXPORTAL=1"]);
     }
 
     #[test]
     fn ai_exit_codes_have_messages() {
-        assert_eq!(ai_exit_message("ai-pick", 0), None);
-        assert_eq!(ai_exit_message("ai-pick", 1), None);
-        assert!(ai_exit_message("ai-pick", 2).unwrap().contains("not valid"));
-        assert!(ai_exit_message("ai-pick", 3).unwrap().contains("Not found"));
-        assert!(ai_exit_message("ai-pick", 4)
+        assert_eq!(ai_exit_message("agent", 0), None);
+        assert_eq!(ai_exit_message("agent", 1), None);
+        assert!(ai_exit_message("diagnose", 2)
             .unwrap()
-            .contains("needs input"));
+            .contains("not valid"));
+        assert!(ai_exit_message("agent", 3)
+            .unwrap()
+            .contains("not installed"));
+        assert!(ai_exit_message("agent", 4)
+            .unwrap()
+            .contains("input that was not given"));
         assert_eq!(ai_exit_message("zfs-pool", 2), None);
     }
 

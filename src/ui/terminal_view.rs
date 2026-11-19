@@ -1,8 +1,9 @@
 //! Running an interactive action in VexPortal's own terminal.
 //!
-//! The recipe runs as the logged-in user, exactly as if typed into a terminal: it can
-//! ask its questions, `sudo` can ask for a password, and a wizard can draw its menus.
-//! The command is a validated argv exec'd directly — see [`crate::terminal`].
+//! The command runs as the logged-in user, exactly as if typed into a terminal: it can
+//! ask its questions, `sudo` can ask for a password, and a wizard or an AI assistant can
+//! draw its screen. The command is a validated argv exec'd directly — see
+//! [`crate::terminal`].
 
 use crate::app::App;
 use crate::job::{Job, JobState};
@@ -12,7 +13,7 @@ use crate::ui::window::Window;
 use adw::prelude::*;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
-use vexportal_catalog::validate::{build_for_terminal, Invocation};
+use vexportal_catalog::validate::build_for_terminal;
 use vexportal_catalog::Action;
 use vte4::prelude::*;
 
@@ -38,6 +39,10 @@ pub fn open(
         }
     };
 
+    let Some(command) = terminal::argv(&invocation) else {
+        window.alert("Cannot start this", "This action has no command to run.");
+        return None;
+    };
     let command_line = invocation.audit_line();
     let job = Job::new(&action.title, command_line.clone(), true);
     app.track(&job);
@@ -172,7 +177,7 @@ pub fn open(
     });
 
     dialog.present(Some(window.root()));
-    spawn(window, &term, &dialog, &job, &invocation);
+    spawn(window, &term, &dialog, &job, command);
     term.grab_focus();
     Some(job)
 }
@@ -316,28 +321,27 @@ fn spawn(
     term: &vte4::Terminal,
     dialog: &adw::Dialog,
     job: &Rc<Job>,
-    invocation: &Invocation,
+    argv: Vec<String>,
 ) {
-    let argv = terminal::just_argv(invocation);
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    // Added to the user's own environment, not replacing it: the recipe needs the
+    // Added to the user's own environment, not replacing it: the command needs the
     // session's PATH, HOME and SSH agent. VEXOS_ASSUME_YES is deliberately absent —
     // a person is here to answer.
-    let envv = terminal::environment(invocation);
+    let envv = terminal::environment();
 
     let fallback = {
         let window = window.clone();
         let dialog = dialog.downgrade();
         let title = job.title.clone();
         let job = Rc::downgrade(job);
-        let invocation = invocation.clone();
+        let argv = argv.clone();
         move |error: glib::Error| {
             log::warn!("built-in terminal failed to start: {error}");
             let Some(job) = job.upgrade() else { return };
             if let Some(dialog) = dialog.upgrade() {
                 dialog.force_close();
             }
-            let argv = terminal::external_argv(&title, &invocation);
+            let argv = terminal::external_argv(&title, &argv);
             match std::process::Command::new(&argv[0])
                 .args(&argv[1..])
                 .current_dir(terminal::WORKING_DIRECTORY)

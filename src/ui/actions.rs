@@ -3,12 +3,14 @@
 
 use crate::app::App;
 use crate::job::{Job, JobState};
+use crate::system::ai;
 use crate::ui::{arg_dialog, job_view, terminal_view, window::Window};
 
 use adw::prelude::*;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
+use vexportal_catalog::validate::build_for_user;
 use vexportal_catalog::{Action, Risk};
 
 /// Start an action from a button: collect any parameters `preset` does not answer,
@@ -57,6 +59,8 @@ pub fn proceed(app: &Rc<App>, window: &Window, action: &Action, args: HashMap<St
                 };
                 if action.is_terminal() {
                     terminal_view::open(&app, &window, action, args);
+                } else if action.is_user() {
+                    run_as_user(&app, &window, &id, args, "Done", |_| {});
                 } else {
                     let job = app.run(action, args);
                     job_view::present(&app, &window, &job);
@@ -118,6 +122,61 @@ pub fn run_quietly(
                         other => format!("{} — {}", job.title, other.label().to_lowercase()),
                     };
                     toast_with_details(&app, &window, &message, &job, state.succeeded());
+                });
+            }
+        },
+        {
+            let done = done.clone();
+            move || done(false)
+        },
+    );
+}
+
+/// Run an action that changes the user's own settings: no daemon, no terminal, no
+/// administrator prompt. It is the same `vexos-ai` command a person would type, started
+/// by argv as this user. A failure is a message; a success is a toast and a refreshed page.
+/// `done` gets whether it worked, including `false` for a cancelled confirmation.
+pub fn run_as_user(
+    app: &Rc<App>,
+    window: &Window,
+    id: &str,
+    args: HashMap<String, String>,
+    success: &str,
+    done: impl Fn(bool) + 'static,
+) {
+    let Some(action) = app.catalog.action(id) else {
+        done(false);
+        return;
+    };
+    let answers: BTreeMap<String, String> = args.into_iter().collect();
+    let invocation = match build_for_user(&app.catalog, id, &answers) {
+        Ok(invocation) => invocation,
+        Err(e) => {
+            window.alert("Cannot do this", &e.to_string());
+            done(false);
+            return;
+        }
+    };
+    let done = Rc::new(done);
+    let title = action.title.clone();
+    let success = success.to_string();
+    confirm(
+        window,
+        action,
+        {
+            let window = window.clone();
+            let done = done.clone();
+            move || {
+                glib::spawn_future_local(async move {
+                    let result = ai::run_action(&invocation.action, &invocation.named).await;
+                    let worked = result.is_ok();
+                    match result {
+                        Ok(()) => window.toast(&success),
+                        Err(message) => window.alert(&title, &message),
+                    }
+                    done(worked);
+                    // The page shows what was just changed.
+                    window.state_changed();
                 });
             }
         },

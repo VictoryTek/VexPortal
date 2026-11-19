@@ -34,6 +34,7 @@ impl Format {
             Format::NixosVersion => "a NixOS release such as `26.05`",
             Format::FlakeRef => "a path or flake reference such as `.` or `github:owner/repo`",
             Format::ProgramName => "a program name such as `firefox`",
+            Format::UnitTarget => "a systemd unit such as `sshd.service`, or `rebuild`",
             Format::Url => "an address starting with http:// or https://",
             Format::Ipv4 => "an IPv4 address such as `192.168.1.100`",
             Format::Interface => "a network interface name such as `enp2s0`",
@@ -71,6 +72,7 @@ impl Format {
             Format::NixosVersion => is_nixos_version(value),
             Format::FlakeRef => is_flake_ref(value),
             Format::ProgramName => is_program_name(value),
+            Format::UnitTarget => is_unit_target(value),
             Format::Url => is_url(value),
             Format::Ipv4 => is_ipv4(value),
             Format::Interface => is_interface(value),
@@ -218,10 +220,20 @@ fn is_flake_ref(v: &str) -> bool {
 }
 
 fn is_program_name(v: &str) -> bool {
+    // A leading dash would read as an option to the program the name is handed to.
     v.len() <= 255
-        && !v.starts_with('.')
+        && !v.starts_with(['.', '-'])
         && v.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+}
+
+/// What `vexos-ai diagnose` takes: a unit name (`getty@tty1.service`) or `rebuild`. The first
+/// character is a letter or digit so it can never be read as an option.
+fn is_unit_target(v: &str) -> bool {
+    v.len() <= 255
+        && v.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '.' | '_' | ':' | '-'))
 }
 
 /// What follows `http://` or `https://`: only characters that are safe inside a Nix
@@ -631,5 +643,22 @@ mod tests {
         assert!(Format::ProgramName.validate(".").is_err());
         assert!(Format::ProgramName.validate("..").is_err());
         assert!(Format::ProgramName.validate("a/b").is_err());
+        assert!(Format::ProgramName.validate("-x").is_err());
+    }
+
+    #[test]
+    fn a_diagnose_target_is_a_unit_name_that_cannot_look_like_an_option() {
+        for ok in [
+            "rebuild",
+            "sshd.service",
+            "getty@tty1.service",
+            "dbus:x",
+            "a",
+        ] {
+            assert!(Format::UnitTarget.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["-v", "--help", ".hidden", "a b", "a;b", "a/b", "$x", "@a"] {
+            assert!(Format::UnitTarget.validate(bad).is_err(), "{bad}");
+        }
     }
 }

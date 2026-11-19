@@ -129,10 +129,13 @@ description = "An AI assistant (Claude Code, Codex or OpenCode), set up to chang
 #
 # The page is shown only while `ai` is on in features.nix. Everything here acts on the
 # logged-in user's own files under ~/.config, ~/.local/share and ~/.cache, so every
-# action runs in the terminal as the user: the daemon's HOME is /root.
+# action runs as the user, never in the daemon (its HOME is /root). The assistant itself
+# opens in the built-in terminal; the settings run silently. Both call the `vexos-ai`
+# command by argv (github:VictoryTek/vexos-ai, docs/contract.md), not `just`.
 
 [[action]]
 id = "agent"
+backend = "native"
 command = ["agent"]
 implements = "agent"
 title = "Open AI Assistant"
@@ -147,6 +150,7 @@ mode_reason = "The assistant is a full-screen terminal program that runs as you.
 
 [[action]]
 id = "diagnose"
+backend = "native"
 command = ["diagnose"]
 implements = "diagnose"
 title = "Diagnose a Problem"
@@ -164,10 +168,11 @@ mode_reason = "The assistant answers in an interactive terminal session that run
   label = "What to look at"
   help = "Leave empty for failed units and this boot's errors; enter a unit name, or `rebuild` to reproduce a failed rebuild."
   widget = "text"
-  format = "slug"
+  format = "unit-target"
 
 [[action]]
 id = "ai-pick"
+backend = "native"
 command = ["ai-pick"]
 implements = "ai-pick"
 title = "Choose AI Assistant"
@@ -177,8 +182,7 @@ page = "ai"
 group = "Assistant"
 roles = ["desktop", "htpc", "server"]
 risk = "medium"
-mode = "terminal"
-mode_reason = "The choice is saved in your own settings."
+mode = "user"
 
   [[action.params]]
   name = "agent"
@@ -189,6 +193,7 @@ mode_reason = "The choice is saved in your own settings."
 
 [[action]]
 id = "ai-crash-mute"
+backend = "native"
 command = ["ai-crash-mute"]
 implements = "ai-crash-mute"
 title = "Crash Notifications"
@@ -198,20 +203,41 @@ page = "ai"
 group = "Crash Notifications"
 roles = ["desktop", "htpc", "server"]
 risk = "medium"
-mode = "terminal"
-mode_reason = "Mutes are saved in your own settings."
+mode = "user"
 
   [[action.params]]
   name = "name"
   label = "Program"
+  required = true
   widget = "text"
   format = "program-name"
 
   [[action.params]]
   name = "state"
   label = "Notifications"
+  help = "`on` mutes the program (the default); `off` offers the notification again."
+  default = "on"
   widget = "choice"
-  choices = ["off"]
+  choices = ["on", "off"]
+
+[[action]]
+id = "ai-crash-capture"
+backend = "native"
+title = "Crash Capture"
+blurb = "Watch for crashes so VexOS can offer to have the assistant explain them. Off stops the watcher."
+icon = "dialog-error-symbolic"
+page = "ai"
+group = "Crash Notifications"
+roles = ["desktop", "htpc", "server"]
+risk = "medium"
+mode = "user"
+
+  [[action.params]]
+  name = "state"
+  label = "Crash capture"
+  required = true
+  widget = "choice"
+  choices = ["on", "off"]
 
 # ─────────────────────────────── System ───────────────────────────────
 

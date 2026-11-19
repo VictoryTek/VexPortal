@@ -86,9 +86,9 @@ impl Invocation {
 pub enum ValidationError {
     #[error("`{0}` is not an action VexPortal knows about")]
     UnknownAction(String),
-    #[error("`{0}` runs interactively and can only be started in a terminal")]
+    #[error("`{0}` runs as your own account in VexPortal, not through the daemon")]
     TerminalOnly(String),
-    #[error("`{0}` runs as root through the VexPortal daemon, not in a terminal")]
+    #[error("`{0}` does not run that way: it is a daemon, terminal or own-account action")]
     DaemonOnly(String),
     #[error("`{action}` has no parameter named `{param}`")]
     UnknownParam { action: String, param: String },
@@ -134,6 +134,22 @@ pub fn build_for_terminal(
 ) -> Result<Invocation, ValidationError> {
     let action = lookup(catalog, action_id)?;
     if action.mode != Mode::Terminal {
+        return Err(ValidationError::DaemonOnly(action.id.clone()));
+    }
+    invocation(action, answers)
+}
+
+/// Validate `answers` for an action the GUI runs itself, as the user, with no terminal.
+///
+/// Like [`build_for_terminal`] it refuses every other lane, so a root action cannot be
+/// started unprivileged and a user action can never reach the daemon.
+pub fn build_for_user(
+    catalog: &Catalog,
+    action_id: &str,
+    answers: &BTreeMap<String, String>,
+) -> Result<Invocation, ValidationError> {
+    let action = lookup(catalog, action_id)?;
+    if action.mode != Mode::User {
         return Err(ValidationError::DaemonOnly(action.id.clone()));
     }
     invocation(action, answers)
@@ -322,6 +338,7 @@ mod tests {
                 let result = match action.mode {
                     Mode::Daemon => build(&catalog, &action.id, &attempt),
                     Mode::Terminal => build_for_terminal(&catalog, &action.id, &attempt),
+                    Mode::User => build_for_user(&catalog, &action.id, &attempt),
                 };
                 assert!(
                     result.is_err(),
@@ -508,6 +525,50 @@ widget = \"text\"
     fn daemon_actions_cannot_be_run_in_the_terminal() {
         let err = build_for_terminal(&catalog(), "rebuild", &answers(&[])).unwrap_err();
         assert!(matches!(err, ValidationError::DaemonOnly(_)));
+    }
+
+    #[test]
+    fn own_account_actions_are_not_the_daemons_and_not_the_terminals() {
+        let c = catalog();
+        let pick = answers(&[("agent", "codex")]);
+        assert!(matches!(
+            build(&c, "ai-pick", &pick).unwrap_err(),
+            ValidationError::TerminalOnly(_)
+        ));
+        assert!(matches!(
+            build_for_terminal(&c, "ai-pick", &pick).unwrap_err(),
+            ValidationError::DaemonOnly(_)
+        ));
+        assert!(matches!(
+            build_for_user(&c, "rebuild", &answers(&[])).unwrap_err(),
+            ValidationError::DaemonOnly(_)
+        ));
+        let inv = build_for_user(&c, "ai-pick", &pick).unwrap();
+        assert_eq!(inv.backend, Backend::Native);
+        assert_eq!(inv.named["agent"], "codex");
+        assert!(build_for_user(&c, "ai-pick", &answers(&[("agent", "vim")])).is_err());
+        assert!(build_for_user(&c, "ai-pick", &answers(&[])).is_err());
+    }
+
+    #[test]
+    fn the_assistant_actions_check_their_answers() {
+        let c = catalog();
+        let ok = build_for_terminal(
+            &c,
+            "diagnose",
+            &answers(&[("target", "getty@tty1.service")]),
+        );
+        assert_eq!(ok.unwrap().named["target"], "getty@tty1.service");
+        for bad in ["--help", "-v", "a b", "x;y"] {
+            assert!(
+                build_for_terminal(&c, "diagnose", &answers(&[("target", bad)])).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(build_for_terminal(&c, "agent", &answers(&[])).is_ok());
+        assert!(build_for_user(&c, "ai-crash-capture", &answers(&[("state", "on")])).is_ok());
+        assert!(build_for_user(&c, "ai-crash-capture", &answers(&[("state", "maybe")])).is_err());
+        assert!(build_for_user(&c, "ai-crash-mute", &answers(&[("name", "-x")])).is_err());
     }
 
     #[test]

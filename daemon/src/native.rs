@@ -497,7 +497,9 @@ mod tests {
         let native: Vec<&str> = catalog
             .actions
             .iter()
-            .filter(|a| a.backend == Backend::Native)
+            // The ones the daemon runs: the assistant's actions are native too, but the GUI
+            // runs them as the user and the daemon refuses them.
+            .filter(|a| a.backend == Backend::Native && a.mode == vexportal_catalog::Mode::Daemon)
             .map(|a| a.id.as_str())
             .collect();
         for id in &native {

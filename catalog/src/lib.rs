@@ -133,6 +133,8 @@ pub enum Format {
     FlakeRef,
     /// A program's file name, as crash notifications are keyed: no `/`, no leading `.`.
     ProgramName,
+    /// A systemd unit name or `rebuild`, as `vexos-ai diagnose` takes it.
+    UnitTarget,
     /// An `http://` or `https://` address a person types, with no space, quote,
     /// backslash, `$` or `;` in it.
     Url,
@@ -265,6 +267,9 @@ pub enum Mode {
     /// Run as the logged-in user in VexPortal's built-in terminal: the recipe holds a
     /// conversation, or acts on the user's own account (`$HOME`, dconf, SSH keys).
     Terminal,
+    /// Run as the logged-in user by the GUI itself, with no terminal and no daemon: a
+    /// setting in the user's own home. It has no recipe, so it must be native.
+    User,
 }
 
 /// What carries an action out.
@@ -329,6 +334,10 @@ impl Action {
 
     pub fn is_terminal(&self) -> bool {
         self.mode == Mode::Terminal
+    }
+
+    pub fn is_user(&self) -> bool {
+        self.mode == Mode::User
     }
 
     /// Routed through the justfile's `_menu` helper, which joins the parameters into
@@ -443,6 +452,11 @@ impl Catalog {
             if action.risk == Risk::Destructive && action.confirm.is_none() {
                 return invalid(format!(
                     "action `{id}` is destructive but has no `confirm` message"
+                ));
+            }
+            if action.is_user() && !action.is_native() {
+                return invalid(format!(
+                    "user action `{id}` must be native: the GUI has no recipe to run for it"
                 ));
             }
             if action.is_terminal() && action.mode_reason.is_none() {
@@ -603,6 +617,13 @@ mod tests {
              [[action]]\nid = \"a\"\nimplements = \"a\"\ntitle = \"A\"\nblurb = \"b\"\n\
              icon = \"i\"\npage = \"p\"\ngroup = \"g\"\nroles = [\"desktop\"]\n{body}"
         ))
+    }
+
+    #[test]
+    fn an_own_account_action_must_be_native() {
+        let err = single("command = [\"a\"]\nrisk = \"medium\"\nmode = \"user\"\n").unwrap_err();
+        assert!(err.to_string().contains("native"), "{err}");
+        single("backend = \"native\"\nrisk = \"medium\"\nmode = \"user\"\n").unwrap();
     }
 
     #[test]

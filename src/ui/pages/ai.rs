@@ -1,20 +1,20 @@
-//! The AI assistant: setup and crash-notification mutes.
+//! The AI assistant: setup and crash-notification settings.
 //!
-//! The state comes from `vexos-ai status --json`; every change goes
-//! through a `just ai-*` recipe in the terminal, as the user.
+//! The state comes from `vexos-ai status --json`. A setting changes by running
+//! `vexos-ai` itself, silently and as the user, with no terminal: it is a few files in
+//! the user's own home. Only opening the assistant needs the terminal.
 
 use crate::app::App;
 use crate::system::ai::{self, Agent, AiState};
-use crate::ui::{self, actions, job_view, terminal_view, window::Window};
+use crate::ui::{self, actions, job_view, window::Window};
 
 use adw::prelude::*;
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use vexportal_catalog::Format;
 
 /// Rendered by this page's own controls rather than as rows.
-const MANAGED: [&str; 2] = ["ai-pick", "ai-crash-mute"];
+const MANAGED: [&str; 3] = ["ai-pick", "ai-crash-mute", "ai-crash-capture"];
 
 pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     let page = adw::PreferencesPage::new();
@@ -226,57 +226,53 @@ fn change_dialog(app: &Rc<App>, window: &Window, current: Agent) {
     dialog.present(Some(window.root()));
 }
 
-/// Run `ai-pick`, and once it has saved the choice, offer to open the assistant.
+/// Save the choice, silently and as the user, and once it is saved offer to open the
+/// assistant. A failure (not installed, not supported yet) is shown as a message.
 fn pick(app: &Rc<App>, window: &Window, agent: Agent) {
-    let Some(action) = app.catalog.action("ai-pick") else {
-        return;
-    };
-    let mut args = HashMap::new();
-    args.insert("agent".to_string(), agent.id().to_string());
-    let Some(job) = terminal_view::open(app, window, action, args) else {
-        return;
-    };
-
-    let offered = Cell::new(false);
-    let app = Rc::downgrade(app);
-    let window = window.clone();
-    job.connect_changed(move |job| {
-        if !job.state().succeeded() || offered.replace(true) {
-            return;
-        }
-        let Some(app) = app.upgrade() else { return };
-        // Nothing worth reading in its output: close it and ask instead.
-        let dialog = job.dialog.borrow().as_ref().and_then(|d| d.upgrade());
-        if let Some(dialog) = dialog {
-            dialog.force_close();
-        }
-        if app.visible("agent").is_none() {
-            return;
-        }
-        let ask = adw::AlertDialog::new(
-            Some(&format!("Open {}?", agent.title())),
-            Some(&format!(
-                "{} is set up. It opens in VexPortal's terminal, working in /etc/nixos. \
-                 Changes it makes take effect when you rebuild.",
-                agent.title()
-            )),
-        );
-        ask.add_response("later", "Later");
-        ask.add_response("open", &format!("Open {}", agent.title()));
-        ask.set_response_appearance("open", adw::ResponseAppearance::Suggested);
-        ask.set_default_response(Some("open"));
-        ask.set_close_response("later");
-        ask.connect_response(None, {
-            let app = app.clone();
+    let args = HashMap::from([("agent".to_string(), agent.id().to_string())]);
+    actions::run_as_user(
+        app,
+        window,
+        "ai-pick",
+        args,
+        &format!("{} is your assistant", agent.title()),
+        {
+            let app = Rc::downgrade(app);
             let window = window.clone();
-            move |_, response| {
-                if response == "open" {
-                    actions::activate(&app, &window, "agent", HashMap::new());
+            move |worked| {
+                let Some(app) = app.upgrade() else { return };
+                if worked && app.visible("agent").is_some() {
+                    offer_open(&app, &window, agent);
                 }
             }
-        });
-        ask.present(Some(window.root()));
+        },
+    );
+}
+
+fn offer_open(app: &Rc<App>, window: &Window, agent: Agent) {
+    let ask = adw::AlertDialog::new(
+        Some(&format!("Open {}?", agent.title())),
+        Some(&format!(
+            "{} is set up. It opens in VexPortal's terminal, working in /etc/nixos. \
+             Changes it makes take effect when you rebuild.",
+            agent.title()
+        )),
+    );
+    ask.add_response("later", "Later");
+    ask.add_response("open", &format!("Open {}", agent.title()));
+    ask.set_response_appearance("open", adw::ResponseAppearance::Suggested);
+    ask.set_default_response(Some("open"));
+    ask.set_close_response("later");
+    ask.connect_response(None, {
+        let app = app.clone();
+        let window = window.clone();
+        move |_, response| {
+            if response == "open" {
+                actions::activate(&app, &window, "agent", HashMap::new());
+            }
+        }
     });
+    ask.present(Some(window.root()));
 }
 
 fn crash_mutes(app: &Rc<App>, window: &Window, state: &AiState) -> adw::PreferencesGroup {
@@ -287,6 +283,9 @@ fn crash_mutes(app: &Rc<App>, window: &Window, state: &AiState) -> adw::Preferen
              These programs are muted.",
         )
         .build();
+    if app.visible("ai-crash-capture").is_some() {
+        group.add(&capture_switch(app, window, state.crash_capture));
+    }
     if state.muted.is_empty() {
         let row = adw::ActionRow::builder()
             .title("No programs are muted")
@@ -326,4 +325,32 @@ fn crash_mutes(app: &Rc<App>, window: &Window, state: &AiState) -> adw::Preferen
         group.add(&row);
     }
     group
+}
+
+/// The crash watcher's on/off switch. Whatever the outcome, the page is rebuilt from
+/// what `vexos-ai` now reports, so a refused change puts the switch back by itself.
+fn capture_switch(app: &Rc<App>, window: &Window, on: bool) -> adw::SwitchRow {
+    let row = adw::SwitchRow::builder()
+        .title("Watch for crashes")
+        .subtitle("Offers to have the assistant explain a crash. Off stops the watcher.")
+        .active(on)
+        .build();
+    row.connect_active_notify({
+        let app = app.clone();
+        let window = window.clone();
+        move |row| {
+            row.set_sensitive(false);
+            let state = if row.is_active() { "on" } else { "off" };
+            let args = HashMap::from([("state".to_string(), state.to_string())]);
+            actions::run_as_user(
+                &app,
+                &window,
+                "ai-crash-capture",
+                args,
+                &format!("Crash capture is {state}"),
+                |_| {},
+            );
+        }
+    });
+    row
 }

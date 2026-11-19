@@ -19,8 +19,8 @@ Every operation is a `[[action]]` in `catalog/src/catalog.toml`, and runs one of
   and backups all go this way.
 - **Terminal** (`mode = "terminal"`): recipes that hold a conversation (the storage
   and service-setup wizards) or act on your own account (SSH keys, Tailscale, GNOME
-  settings, the AI assistant) run in VexPortal's built-in terminal, **as you**, exactly
-  as if typed into a shell — any root step goes through the recipe's own `sudo`. The
+  settings, opening the AI assistant) run in VexPortal's built-in terminal, **as you**,
+  exactly as if typed into a shell — any root step goes through the recipe's own `sudo`. The
   argv is validated by the same catalog code and exec'd directly. If the built-in
   terminal cannot start, the same argv goes to your desktop's terminal via
   `xdg-terminal-exec`.
@@ -30,9 +30,12 @@ State the GUI can read without privileges — features.nix, server-services.nix,
 rather than "run a command to find out" buttons.
 
 The **AI Assistant** page appears in the sidebar once `ai` is on in features.nix. It
-sets up `vexos-ai` with the assistant you choose (Claude Code, Codex or OpenCode) and unmutes crash notifications. It reads
-`vexos-ai`'s state from your home and makes every change through the justfile's `ai-*`
-recipes. Until a rebuild installs `vexos-ai`, it offers only the rebuild.
+sets up `vexos-ai` with the assistant you choose (Claude Code, Codex or OpenCode), unmutes
+crash notifications and switches crash watching on or off. It reads `vexos-ai`'s state
+from your home and changes it by running the `vexos-ai` command itself, silently and as
+you, with no terminal and no `just`. Only opening the assistant and Diagnose use the
+built-in terminal, and they also run `vexos-ai` directly. Until a rebuild installs
+`vexos-ai`, the page offers only the rebuild.
 
 ## Build
 
