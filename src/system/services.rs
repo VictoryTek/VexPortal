@@ -17,6 +17,16 @@ const DEADLINE: Duration = Duration::from_secs(8);
 /// Run a command and return what it printed, or `None` if it could not start, did not
 /// finish in time, or its output was unreadable.
 async fn capture(program: &str, args: &[String]) -> Option<String> {
+    capture_within(program, args, DEADLINE).await
+}
+
+/// [`capture`] with its own time limit, for the tools that are slow by nature (a network
+/// scan, a share listing).
+pub(crate) async fn capture_within(
+    program: &str,
+    args: &[String],
+    deadline: Duration,
+) -> Option<String> {
     let mut argv: Vec<&std::ffi::OsStr> = vec![std::ffi::OsStr::new(program)];
     argv.extend(args.iter().map(std::ffi::OsStr::new));
     let process = gio::Subprocess::newv(
@@ -32,7 +42,7 @@ async fn capture(program: &str, args: &[String]) -> Option<String> {
         let finished = finished.clone();
         let timed_out = timed_out.clone();
         async move {
-            glib::timeout_future(DEADLINE).await;
+            glib::timeout_future(deadline).await;
             if !finished.get() {
                 timed_out.set(true);
                 process.force_exit();

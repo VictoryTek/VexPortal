@@ -9,6 +9,7 @@ mod features;
 mod network;
 mod overview;
 mod services;
+mod storage;
 mod system;
 mod tailscale;
 
@@ -36,6 +37,7 @@ pub fn build(app: &Rc<App>, window: &Window, id: &str) -> adw::NavigationPage {
         "features" => features::build(app, window),
         "network" => network::build(app, window),
         "services" => services::build(app, window),
+        "storage" => storage::build(app, window),
         other => generic(app, window, other),
     }
 }

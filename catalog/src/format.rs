@@ -42,6 +42,10 @@ impl Format {
             Format::Subdomain => "a subdomain such as `home` or `vpn.lab`",
             Format::SshKey => "an SSH public key such as `ssh-ed25519 AAAA...`",
             Format::JobName => "a job name such as `tv`: letters, digits, dots, dashes or underscores",
+            Format::Host => "a host name or IPv4 address such as `nas.local` or `192.168.1.10`",
+            Format::ShareName => "a share name or export path such as `media` or `/tank/media`",
+            Format::SmbUser => "a login name",
+            Format::Gid => "a group number such as `1500`",
             Format::ResticRepo => {
                 "a path such as `/mnt/backup/restic-repo`, or an address such as `sftp:user@host:/path`"
             }
@@ -76,6 +80,10 @@ impl Format {
             Format::ResticRepo => is_restic_repo(value),
             Format::SshKey => is_ssh_key(value),
             Format::JobName => is_job_name(value),
+            Format::Host => is_host(value),
+            Format::ShareName => is_share_name(value),
+            Format::SmbUser => is_smb_user(value),
+            Format::Gid => is_gid(value),
         };
 
         if ok {
@@ -113,6 +121,38 @@ fn is_job_name(v: &str) -> bool {
         && v.starts_with(|c: char| c.is_ascii_alphanumeric())
         && v.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
+/// Dotted host name labels, which also covers a dotted IPv4 address.
+fn is_host(v: &str) -> bool {
+    v.len() <= 253
+        && v.split('.')
+            .all(|label| !label.is_empty() && is_hostname(label))
+}
+
+/// An SMB share name or an NFS export path: spaces inside are fine (NixOS escapes them in fstab), but no quotes, no `..` component.
+fn is_share_name(v: &str) -> bool {
+    v.len() <= 128
+        && v.chars().any(|c| c.is_ascii_alphanumeric())
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | ' '))
+        && v.trim() == v
+        && !v.split('/').any(|part| part == "..")
+}
+
+/// A login name for a share, such as `me`, `me@example.com` or `DOMAIN\me`.
+fn is_smb_user(v: &str) -> bool {
+    v.len() <= 64
+        && v.trim() == v
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '@' | '\\' | ' '))
+}
+
+/// A group number, 1 to 4294967294.
+fn is_gid(v: &str) -> bool {
+    v.len() <= 10
+        && v.chars().all(|c| c.is_ascii_digit())
+        && v.parse::<u32>().is_ok_and(|n| n > 0 && n < u32::MAX)
 }
 
 fn is_hostname(v: &str) -> bool {
@@ -456,6 +496,34 @@ mod tests {
     }
 
     #[test]
+    fn share_formats_accept_what_a_nas_offers_and_nothing_that_could_misbehave() {
+        for ok in ["nas.local", "192.168.1.10", "box"] {
+            assert!(Format::Host.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["a..b", "-x", "a b", "x;y", "user@host"] {
+            assert!(Format::Host.validate(bad).is_err(), "{bad}");
+        }
+        for ok in ["media", "/tank/media", "tv_4k-2.0", "Shared Documents"] {
+            assert!(Format::ShareName.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["/a/../b", " a", "a\"b", "$HOME", "///"] {
+            assert!(Format::ShareName.validate(bad).is_err(), "{bad}");
+        }
+        for ok in ["me", "me@example.com", "DOMAIN\\me", "John Smith"] {
+            assert!(Format::SmbUser.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in [" me", "me ", "a;b", "a\"b", "a,b"] {
+            assert!(Format::SmbUser.validate(bad).is_err(), "{bad}");
+        }
+        for ok in ["1", "1500", "4294967294"] {
+            assert!(Format::Gid.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in ["0", "-1", "4294967295", "1.5", "abc", "99999999999"] {
+            assert!(Format::Gid.validate(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn job_names_keep_the_case_the_host_gave_them() {
         for ok in ["tv", "Media-Mirror", "a.b_c-1", "4k"] {
             assert!(Format::JobName.validate(ok).is_ok(), "{ok}");
@@ -495,6 +563,9 @@ mod tests {
                 Format::ResticRepo,
                 Format::SshKey,
                 Format::JobName,
+                Format::Host,
+                Format::ShareName,
+                Format::Gid,
             ] {
                 assert!(
                     format.validate(probe).is_err(),

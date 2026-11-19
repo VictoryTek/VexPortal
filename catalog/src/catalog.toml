@@ -1118,6 +1118,7 @@ mode_reason = "A menu-driven wizard that walks through disks and parity layout."
 
 [[action]]
 id = "remote-storage-attach"
+backend = "native"
 command = ["remote-storage", "attach"]
 implements = "_remote-storage-attach"
 title = "Attach Remote Share"
@@ -1128,23 +1129,108 @@ group = "Remote Storage"
 roles = ["desktop", "htpc", "server", "headless-server"]
 risk = "medium"
 rebuild = true
-mode = "terminal"
-mode_reason = "It asks for the host, share, mount point and credentials step by step."
+
+  [[action.params]]
+  name = "protocol"
+  label = "Protocol"
+  required = true
+  widget = "choice"
+  choices = ["nfs", "cifs"]
+
+  [[action.params]]
+  name = "server"
+  label = "Server"
+  help = "The host name or IP address of the machine that shares the storage."
+  required = true
+  widget = "text"
+  format = "host"
+
+  [[action.params]]
+  name = "share"
+  label = "Share"
+  help = "An SMB share name such as media, or an NFS export path such as /tank/media."
+  required = true
+  widget = "text"
+  format = "share-name"
+
+  [[action.params]]
+  name = "username"
+  label = "SMB username"
+  help = "SMB only."
+  widget = "text"
+  format = "smb-user"
+
+  [[action.params]]
+  name = "mountpoint"
+  label = "Mount point"
+  help = "A folder under /mnt. Leave empty to use /mnt/<server>/<share>."
+  widget = "text"
+  format = "abs-path"
+
+  [[action.params]]
+  name = "gid"
+  label = "Group number"
+  help = "NFS only: the group that may write on the server. Leave empty to use the share's own group."
+  widget = "text"
+  format = "gid"
+
+  [[action.params]]
+  name = "test_mount"
+  label = "Try the share first"
+  default = "yes"
+  widget = "choice"
+  choices = ["yes", "no"]
+
+  [[action.params]]
+  name = "owner_write"
+  label = "Let my account write (SMB)"
+  default = "yes"
+  widget = "choice"
+  choices = ["yes", "no"]
+
+  [[action.params]]
+  name = "media_write"
+  label = "Let media services write"
+  default = "yes"
+  widget = "choice"
+  choices = ["yes", "no"]
+
+  [[action.params]]
+  name = "password"
+  label = "SMB password"
+  help = "SMB only. Stored root-only in the secrets folder, never in the Nix store."
+  widget = "secret"
 
 [[action]]
 id = "remote-storage-detach"
+backend = "native"
 command = ["remote-storage", "detach"]
 implements = "_remote-storage-detach"
 title = "Detach Remote Share"
-blurb = "Remove a share attached earlier and unmount it. Takes effect on the next rebuild."
+blurb = "Remove a share attached earlier and unmount it. Nothing on the remote host changes. Takes effect on the next rebuild."
 icon = "folder-remote-symbolic"
 page = "storage"
 group = "Remote Storage"
 roles = ["desktop", "htpc", "server", "headless-server"]
-risk = "medium"
+risk = "destructive"
+confirm = "The share is removed from the configuration, unmounted, and its login file deleted if nothing else uses it. The data on the server is not touched."
 rebuild = true
-mode = "terminal"
-mode_reason = "It lists the configured shares and asks which to remove."
+
+  [[action.params]]
+  name = "mount"
+  label = "Mount point"
+  required = true
+  widget = "text"
+  format = "abs-path"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type detach to confirm"
+  required = true
+  widget = "confirm"
+  expect = "detach"
+
+
 
 # ─────────────────────────────── Cache & Kernel ───────────────────────────────
 

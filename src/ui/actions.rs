@@ -30,6 +30,11 @@ pub fn activate(app: &Rc<App>, window: &Window, id: &str, preset: HashMap<String
         }
         return;
     }
+    // The attach form looks servers and shares up as it goes, which the generic one cannot.
+    if id == "remote-storage-attach" {
+        crate::ui::remote_attach::present(app, window);
+        return;
+    }
     if action.params.iter().any(|p| !preset.contains_key(&p.name)) {
         arg_dialog::present(app, window, action, preset);
     } else {

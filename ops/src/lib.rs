@@ -24,6 +24,7 @@ pub mod gitrepo;
 pub mod nixedit;
 pub mod plex;
 pub mod rebuild;
+pub mod remote;
 pub mod runner;
 pub mod services;
 pub mod sidefile;
@@ -97,6 +98,8 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "nas-sync-now",
     "backup-plex",
     "restore-plex",
+    "remote-storage-attach",
+    "remote-storage-detach",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -170,6 +173,8 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "nas-sync-now" => backup::nas_sync_now(ctx).await,
         "backup-plex" => plex::backup(ctx).await,
         "restore-plex" => plex::restore(ctx).await,
+        "remote-storage-attach" => remote::attach(ctx).await,
+        "remote-storage-detach" => remote::detach(ctx).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;

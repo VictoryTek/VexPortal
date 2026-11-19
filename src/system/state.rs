@@ -40,6 +40,8 @@ pub struct SystemState {
     pub features_text: String,
     /// The text of server-services.nix, for the same reason.
     pub services_text: String,
+    /// The text of storage-remote.nix, for the attached shares.
+    pub remote_text: String,
     /// How long since the newest flake input was updated.
     pub lock_age: Option<Duration>,
 }
@@ -80,6 +82,8 @@ impl SystemState {
             settings,
             features_text: std::fs::read_to_string(FEATURES_FILE).unwrap_or_default(),
             services_text: std::fs::read_to_string(SERVICES_FILE).unwrap_or_default(),
+            remote_text: std::fs::read_to_string("/etc/nixos/storage-remote.nix")
+                .unwrap_or_default(),
             lock_age: read_lock_age(),
         }
     }

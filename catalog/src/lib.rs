@@ -152,6 +152,14 @@ pub enum Format {
     SshKey,
     /// A job name from a host's own configuration, such as `tv` or `Media-Mirror`.
     JobName,
+    /// A host name or IPv4 address of a storage server.
+    Host,
+    /// An SMB share name, or an NFS export path.
+    ShareName,
+    /// The login for an SMB share.
+    SmbUser,
+    /// A numeric group id.
+    Gid,
 }
 
 /// How the GUI renders a parameter, and what the daemon will accept for it.
