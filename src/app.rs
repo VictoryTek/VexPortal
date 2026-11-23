@@ -154,7 +154,49 @@ impl App {
     }
 }
 
+thread_local! {
+    /// The running app, so a second activation and the `show-page` action reach the
+    /// window that already exists instead of building another.
+    static CURRENT: RefCell<Option<Rc<App>>> = const { RefCell::new(None) };
+}
+
+/// The sidebar page to open for a requested id: only a page the sidebar lists. A
+/// hidden or unknown id (the AI page with the feature off) gets `None`.
+fn resolve_page<'a>(requested: &str, visible: &[&'a str]) -> Option<&'a str> {
+    visible.iter().copied().find(|id| *id == requested)
+}
+
+/// Raise the window and, when `requested` is given, switch to that page. An id that is
+/// not a visible page opens the Overview instead. The id only picks a sidebar entry;
+/// it never reaches the daemon or a command. Both `--page` and the `show-page` action
+/// come through here.
+pub fn show_page(requested: Option<&str>) {
+    let Some(app) = CURRENT.with(|c| c.borrow().clone()) else {
+        return;
+    };
+    let window = app.window.borrow().clone();
+    let Some(window) = window else { return };
+    if let Some(requested) = requested {
+        let pages = app.visible_pages();
+        let ids: Vec<&str> = pages.iter().map(|p| p.id.as_str()).collect();
+        match resolve_page(requested, &ids) {
+            Some(id) => window.show(id),
+            None => {
+                log::warn!("ignoring unknown or hidden page {requested:?}; opening the Overview");
+                window.show(pages::OVERVIEW);
+            }
+        }
+    }
+    window.present();
+}
+
 pub fn build(application: &adw::Application) {
+    // Activated again while running: raise the window rather than build a second one.
+    if CURRENT.with(|c| c.borrow().is_some()) {
+        show_page(None);
+        return;
+    }
+
     // A Tailscale sign-in still waiting in the browser would otherwise leave its
     // `tailscale up` running after the last window closes.
     application.connect_shutdown(|_| pages::stop_tailscale_sign_in());
@@ -208,5 +250,31 @@ pub fn build(application: &adw::Application) {
         }
     });
 
+    CURRENT.with(|c| *c.borrow_mut() = Some(app));
     window.present();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_page;
+
+    #[test]
+    fn a_visible_page_resolves_to_itself() {
+        assert_eq!(resolve_page("ai", &["system", "ai"]), Some("ai"));
+    }
+
+    #[test]
+    fn an_unknown_id_does_not_resolve() {
+        assert_eq!(resolve_page("nope", &["system", "ai"]), None);
+    }
+
+    #[test]
+    fn a_hidden_ai_page_does_not_resolve() {
+        assert_eq!(resolve_page("ai", &["system", "network"]), None);
+    }
+
+    #[test]
+    fn an_empty_id_does_not_resolve() {
+        assert_eq!(resolve_page("", &["system", "ai"]), None);
+    }
 }

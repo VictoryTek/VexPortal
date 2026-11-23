@@ -21,7 +21,43 @@ fn main() -> glib::ExitCode {
     gio::resources_register_include!("compiled.gresource")
         .expect("the compiled gresource bundle should be embedded in the binary");
 
-    let application = adw::Application::builder().application_id(APP_ID).build();
+    // HANDLES_COMMAND_LINE makes a second `vexportal --page ai` reach the running
+    // instance's `command_line` handler instead of starting another process.
+    let application = adw::Application::builder()
+        .application_id(APP_ID)
+        .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
+    application.add_main_option(
+        "page",
+        glib::Char::from(0),
+        glib::OptionFlags::NONE,
+        glib::OptionArg::String,
+        "Open on this page, e.g. ai",
+        Some("ID"),
+    );
+
+    // Also reachable as `org.freedesktop.Application.ActivateAction("show-page", ["ai"])`.
+    let show_page = gio::SimpleAction::new("show-page", Some(glib::VariantTy::STRING));
+    show_page.connect_activate({
+        let application = application.clone();
+        move |_, parameter| {
+            // Builds the window if none exists yet, and just raises it otherwise.
+            application.activate();
+            app::show_page(parameter.and_then(|p| p.str()));
+        }
+    });
+    application.add_action(&show_page);
+
+    application.connect_command_line(|application, command_line| {
+        let page = command_line
+            .options_dict()
+            .lookup::<String>("page")
+            .ok()
+            .flatten();
+        application.activate();
+        app::show_page(page.as_deref());
+        0
+    });
 
     application.connect_startup(|_| {
         adw::init().expect("libadwaita should initialise");

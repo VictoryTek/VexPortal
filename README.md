@@ -60,6 +60,14 @@ nix run .                                  # from a local checkout
 nix profile install github:VictoryTek/VexPortal
 ```
 
+To open on a page, pass its id: `vexportal --page ai`. If VexPortal is already
+running, that raises its window and switches page instead of starting a second
+copy. The same is available over D-Bus, on a running VexPortal, as the `show-page`
+application action (string parameter), e.g. `gdbus call --session --dest io.github.vexportal
+--object-path /io/github/vexportal --method org.freedesktop.Application.ActivateAction
+show-page '[<"ai">]' '{}'`. An unknown id, or a page that is hidden on this
+machine (such as `ai` with the AI feature off), opens the Overview.
+
 ### vexos-nix hosts
 
 If you're on a [vexos-nix](https://github.com/VictoryTek/vexos-nix) host built
