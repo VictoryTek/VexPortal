@@ -7,6 +7,7 @@
 //! says whether a reboot is pending, and `vexos-vpn status --json` reports the VPN.
 
 pub mod ai;
+pub mod ai_model;
 pub mod disks;
 pub mod remote;
 pub mod services;
