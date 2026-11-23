@@ -2,6 +2,9 @@
 <gresources>
   <gresource prefix="/io/github/vexportal">
     <file alias="style.css">style.css</file>
+    <file alias="icons/agents/claude.svg">icons/agents/claude.svg</file>
+    <file alias="icons/agents/codex.svg">icons/agents/codex.svg</file>
+    <file alias="icons/agents/opencode.svg">icons/agents/opencode.svg</file>
     <file alias="icons/hicolor/scalable/apps/io.github.vexportal.svg">icons/hicolor/scalable/apps/io.github.vexportal.svg</file>
   </gresource>
 </gresources>

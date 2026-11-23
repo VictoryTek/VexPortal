@@ -316,9 +316,6 @@ pub fn choices(agent: Agent) -> &'static [(&'static str, &'static str)] {
     match agent {
         Agent::Claude => &[
             ("", "Account default"),
-            ("opus", "Opus (latest)"),
-            ("sonnet", "Sonnet (latest)"),
-            ("haiku", "Haiku (latest)"),
             ("claude-fable-5-2", "Fable 5.2"),
             ("claude-opus-5-5", "Opus 5.5"),
             ("claude-sonnet-5-5", "Sonnet 5.5"),
@@ -609,6 +606,19 @@ mod tests {
         assert_eq!(d.signed_in(Agent::OpenCode), None);
         std::fs::write(d.opencode_data.join("auth.json"), "{}").unwrap();
         assert_eq!(d.signed_in(Agent::OpenCode), Some(true));
+    }
+
+    #[test]
+    fn claude_offers_no_alias_but_still_shows_one_already_saved() {
+        let values: Vec<&str> = choices(Agent::Claude).iter().map(|(v, _)| *v).collect();
+        for alias in ["opus", "sonnet", "haiku"] {
+            assert!(!values.contains(&alias), "{alias}");
+        }
+        let t = TempDir::new();
+        let d = dirs(&t);
+        std::fs::create_dir_all(&d.claude).unwrap();
+        std::fs::write(d.claude.join("settings.json"), r#"{"model":"sonnet"}"#).unwrap();
+        assert_eq!(d.model(Agent::Claude).as_deref(), Some("sonnet"));
     }
 
     #[test]

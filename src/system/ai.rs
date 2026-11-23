@@ -58,6 +58,15 @@ impl Agent {
         }
     }
 
+    /// Who makes it, in a word or two.
+    pub fn maker(self) -> &'static str {
+        match self {
+            Agent::Claude => "Anthropic",
+            Agent::Codex => "OpenAI",
+            Agent::OpenCode => "Open source",
+        }
+    }
+
     pub fn description(self) -> &'static str {
         match self {
             Agent::Claude => "Anthropic. Sign in with a Claude subscription or API key.",

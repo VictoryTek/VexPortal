@@ -129,64 +129,121 @@ pub fn offer_reboot(app: &Rc<App>, window: &Window) {
     ask.present(Some(window.root()));
 }
 
-/// Every assistant, whether or not one is chosen: its sign-in, its model, and Use/Open.
+/// The three assistants as cards, whether or not one is chosen.
 fn assistants(app: &Rc<App>, window: &Window, chosen: Option<Agent>) -> adw::PreferencesGroup {
-    let group = adw::PreferencesGroup::builder()
-        .title("Assistants")
-        .description(
-            "Choose the coding agent VexOS opens, and the model it uses. A model change \
-             applies to the next session. Sign in inside the assistant itself.",
-        )
+    let group = adw::PreferencesGroup::new();
+    let cards = gtk::FlowBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .homogeneous(true)
+        .min_children_per_line(1)
+        .max_children_per_line(3)
+        .column_spacing(14)
+        .row_spacing(14)
         .build();
     let dirs = Dirs::of_user();
     for agent in Agent::ALL {
-        let saved = dirs.model(agent);
-        let signed_in = match dirs.signed_in(agent) {
-            Some(true) => "Signed in",
-            Some(false) => "Not signed in",
-            None => "Sign-in not shown",
-        };
-        let row = adw::ExpanderRow::builder()
-            .title(agent.title())
-            .subtitle(format!(
-                "{}\n{signed_in} · Model: {}",
-                agent.description(),
-                model_label(agent, saved.as_deref())
-            ))
-            .use_markup(false)
-            .build();
-        row.set_subtitle_lines(0);
+        cards.append(&card(app, window, agent, chosen, &dirs));
+    }
+    group.add(&cards);
+    group
+}
 
-        if chosen == Some(agent) {
-            row.add_prefix(&gtk::Image::from_icon_name("user-available-symbolic"));
-            if app.visible("agent").is_some() {
-                let open = gtk::Button::with_label("Open");
-                open.set_valign(gtk::Align::Center);
-                open.add_css_class("suggested-action");
-                open.connect_clicked({
-                    let app = app.clone();
-                    let window = window.clone();
-                    move |_| actions::activate(&app, &window, "agent", HashMap::new())
-                });
-                row.add_suffix(&open);
-            }
-        } else if app.visible("ai-pick").is_some() {
-            let use_it = gtk::Button::with_label("Use this");
-            use_it.set_valign(gtk::Align::Center);
-            if chosen.is_none() && agent == Agent::Claude {
-                use_it.add_css_class("suggested-action");
-            }
-            use_it.connect_clicked({
+/// One assistant: its mark, its sign-in, its model, and the one thing to do next.
+fn card(
+    app: &Rc<App>,
+    window: &Window,
+    agent: Agent,
+    chosen: Option<Agent>,
+    dirs: &Dirs,
+) -> gtk::Overlay {
+    let is_chosen = chosen == Some(agent);
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    body.add_css_class("vex-agent-card");
+    body.add_css_class(agent.id());
+    if is_chosen {
+        body.add_css_class("chosen");
+    }
+    body.set_tooltip_text(Some(agent.description()));
+
+    let logo = gtk::Image::from_resource(&format!(
+        "/io/github/vexportal/icons/agents/{}.svg",
+        agent.id()
+    ));
+    logo.set_pixel_size(40);
+    let tile = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    tile.add_css_class("vex-agent-logo");
+    tile.set_halign(gtk::Align::Center);
+    tile.append(&logo);
+    body.append(&tile);
+
+    let name = gtk::Label::new(Some(agent.title()));
+    name.add_css_class("title-3");
+    body.append(&name);
+    let maker = gtk::Label::new(Some(agent.maker()));
+    maker.add_css_class("caption");
+    maker.add_css_class("dim-label");
+    body.append(&maker);
+
+    body.append(&sign_in_chip(dirs.signed_in(agent)));
+
+    let saved = dirs.model(agent);
+    body.append(&model_menu(window, agent, saved));
+
+    if is_chosen {
+        if app.visible("agent").is_some() {
+            let open = gtk::Button::with_label("Open");
+            open.add_css_class("suggested-action");
+            open.add_css_class("pill");
+            open.set_halign(gtk::Align::Center);
+            open.connect_clicked({
                 let app = app.clone();
                 let window = window.clone();
-                move |_| pick(&app, &window, agent)
+                move |_| actions::activate(&app, &window, "agent", HashMap::new())
             });
-            row.add_suffix(&use_it);
+            body.append(&open);
         }
-        row.add_row(&model_row(window, agent, saved));
-        group.add(&row);
+    } else if app.visible("ai-pick").is_some() {
+        let use_it = gtk::Button::with_label("Use");
+        use_it.add_css_class("pill");
+        use_it.set_halign(gtk::Align::Center);
+        use_it.connect_clicked({
+            let app = app.clone();
+            let window = window.clone();
+            move |_| pick(&app, &window, agent)
+        });
+        body.append(&use_it);
     }
-    group
+
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&body));
+    if is_chosen {
+        let badge = ui::pill("In use", "accent", "");
+        badge.set_halign(gtk::Align::End);
+        badge.set_valign(gtk::Align::Start);
+        badge.set_margin_top(10);
+        badge.set_margin_end(10);
+        overlay.add_overlay(&badge);
+    }
+    overlay
+}
+
+/// A coloured dot and two words.
+fn sign_in_chip(signed_in: Option<bool>) -> gtk::Box {
+    let (class, text) = match signed_in {
+        Some(true) => ("signed", "Signed in"),
+        Some(false) => ("unsigned", "Not signed in"),
+        None => ("unknown", "Sign-in unknown"),
+    };
+    let chip = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    chip.set_halign(gtk::Align::Center);
+    let dot = gtk::Label::new(Some("●"));
+    dot.add_css_class("vex-dot");
+    dot.add_css_class(class);
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("caption");
+    chip.append(&dot);
+    chip.append(&label);
+    chip
 }
 
 /// The model in words: the dropdown's label for it, else the saved name as it is.
@@ -201,26 +258,50 @@ fn model_label(agent: Agent, saved: Option<&str>) -> String {
 }
 
 /// The model dropdown. A saved name the list does not know is added, so it is never lost.
-fn model_row(window: &Window, agent: Agent, saved: Option<String>) -> adw::ComboRow {
+fn model_menu(window: &Window, agent: Agent, saved: Option<String>) -> gtk::DropDown {
     let mut values: Vec<String> = choices(agent).iter().map(|(v, _)| v.to_string()).collect();
     let mut labels: Vec<String> = choices(agent).iter().map(|(_, l)| l.to_string()).collect();
-    let current = saved.clone().unwrap_or_default();
+    let current = saved.unwrap_or_default();
     if !values.contains(&current) {
         values.push(current.clone());
         labels.push(format!("{current} (current)"));
     }
     let selected = values.iter().position(|v| *v == current).unwrap_or(0);
-    let list = gtk::StringList::new(&labels.iter().map(String::as_str).collect::<Vec<_>>());
-    let row = adw::ComboRow::builder()
-        .title("Model")
-        .model(&list)
-        .selected(selected as u32)
-        .build();
-    row.connect_selected_notify({
+    let menu = gtk::DropDown::from_strings(&labels.iter().map(String::as_str).collect::<Vec<_>>());
+    menu.set_selected(selected as u32);
+    // A long saved name is cut short with an ellipsis instead of widening the card.
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, item| {
+        let label = gtk::Label::new(None);
+        label.set_xalign(0.0);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        label.set_max_width_chars(22);
+        if let Some(item) = item.downcast_ref::<gtk::ListItem>() {
+            item.set_child(Some(&label));
+        }
+    });
+    factory.connect_bind(|_, item| {
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let text = item
+            .item()
+            .and_downcast::<gtk::StringObject>()
+            .map(|s| s.string())
+            .unwrap_or_default();
+        if let Some(label) = item.child().and_downcast::<gtk::Label>() {
+            label.set_label(&text);
+            label.set_tooltip_text(Some(&text));
+        }
+    });
+    menu.set_factory(Some(&factory));
+    menu.add_css_class("vex-model");
+    menu.set_tooltip_text(Some("Model"));
+    menu.connect_selected_notify({
         let window = window.clone();
-        move |row| {
+        move |menu| {
             let value = values
-                .get(row.selected() as usize)
+                .get(menu.selected() as usize)
                 .cloned()
                 .unwrap_or_default();
             if value == current {
@@ -239,7 +320,7 @@ fn model_row(window: &Window, agent: Agent, saved: Option<String>) -> adw::Combo
             window.state_changed();
         }
     });
-    row
+    menu
 }
 
 /// Save the choice, silently and as the user, and once it is saved offer to open the
@@ -293,19 +374,13 @@ fn offer_open(app: &Rc<App>, window: &Window, agent: Agent) {
 
 fn crash_mutes(app: &Rc<App>, window: &Window, state: &AiState) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::builder()
-        .title("Crash Notifications")
-        .description(
-            "When a program crashes, VexOS offers to have the assistant explain why. \
-             These programs are muted.",
-        )
+        .title("Crash Alerts")
         .build();
     if app.visible("ai-crash-capture").is_some() {
         group.add(&capture_switch(app, window, state.crash_capture));
     }
     if state.muted.is_empty() {
-        let row = adw::ActionRow::builder()
-            .title("No programs are muted")
-            .build();
+        let row = adw::ActionRow::builder().title("Nothing muted").build();
         row.add_css_class("dim-label");
         group.add(&row);
     }
@@ -348,7 +423,6 @@ fn crash_mutes(app: &Rc<App>, window: &Window, state: &AiState) -> adw::Preferen
 fn capture_switch(app: &Rc<App>, window: &Window, on: bool) -> adw::SwitchRow {
     let row = adw::SwitchRow::builder()
         .title("Watch for crashes")
-        .subtitle("Offers to have the assistant explain a crash. Off stops the watcher.")
         .active(on)
         .build();
     row.connect_active_notify({

@@ -84,3 +84,67 @@
 .vex-terminal {
   padding: 8px;
 }
+
+/* ── AI assistant cards ───────────────────────────────────────── */
+
+.vex-agent-card {
+  padding: 22px 18px 18px 18px;
+  border-radius: 16px;
+  background-color: alpha(currentColor, 0.05);
+  border: 2px solid transparent;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.vex-agent-card:hover {
+  background-color: alpha(currentColor, 0.08);
+  box-shadow: 0 6px 18px alpha(black, 0.18);
+}
+
+.vex-agent-card.chosen {
+  border-color: @accent_bg_color;
+  background-color: alpha(@accent_bg_color, 0.1);
+}
+
+.vex-agent-logo {
+  padding: 16px;
+  border-radius: 9999px;
+  background-color: alpha(currentColor, 0.08);
+}
+
+.vex-agent-card.claude .vex-agent-logo {
+  background-color: alpha(#d97757, 0.18);
+}
+
+.vex-agent-card.codex .vex-agent-logo {
+  background-color: alpha(#7c8cff, 0.18);
+}
+
+.vex-agent-card.opencode .vex-agent-logo {
+  background-color: alpha(#38b2ac, 0.18);
+}
+
+.vex-pill.accent {
+  background-color: @accent_bg_color;
+  color: @accent_fg_color;
+}
+
+.vex-dot {
+  font-size: 0.7em;
+  opacity: 0.9;
+}
+
+.vex-dot.signed {
+  color: @success_color;
+}
+
+.vex-dot.unsigned {
+  color: @warning_color;
+}
+
+.vex-dot.unknown {
+  opacity: 0.4;
+}
+
+.vex-model {
+  margin-top: 4px;
+}
