@@ -310,20 +310,71 @@ fn toml_with_model(text: &str, model: Option<&str>, path: &Path) -> Result<Strin
     }
 }
 
-/// What the dropdown offers, as (value, label). The first entry is always "unset".
+impl Dirs {
+    /// What the dropdown offers, as (value, label). Codex lists the models its own sign-in
+    /// fetched (`models_cache.json`); the built-in list is the fallback when that file is
+    /// missing or unreadable.
+    pub fn choices(&self, agent: Agent) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = choices(agent)
+            .iter()
+            .map(|(v, l)| (v.to_string(), l.to_string()))
+            .collect();
+        if agent == Agent::Codex {
+            let cached = self.codex_cached_models();
+            if !cached.is_empty() {
+                out = cached;
+            }
+        }
+        out
+    }
+
+    /// The models Codex offers this account: `(slug, display name)`, best first, without
+    /// the ones Codex hides from its own picker.
+    fn codex_cached_models(&self) -> Vec<(String, String)> {
+        let Ok(text) = std::fs::read_to_string(self.codex.join("models_cache.json")) else {
+            return Vec::new();
+        };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return Vec::new();
+        };
+        let mut models: Vec<(i64, String, String)> = json
+            .get("models")
+            .and_then(|m| m.as_array())
+            .into_iter()
+            .flatten()
+            .filter(|m| m.get("visibility").and_then(|v| v.as_str()) == Some("list"))
+            .filter_map(|m| {
+                let slug = m.get("slug")?.as_str()?;
+                valid(slug).ok()?;
+                let name = m
+                    .get("display_name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or(slug);
+                let priority = m
+                    .get("priority")
+                    .and_then(|p| p.as_i64())
+                    .unwrap_or(i64::MAX);
+                Some((priority, slug.to_string(), name.to_string()))
+            })
+            .collect();
+        models.sort_by_key(|(p, _, _)| *p);
+        models.dedup_by(|a, b| a.1 == b.1);
+        models.into_iter().map(|(_, s, n)| (s, n)).collect()
+    }
+}
+
+/// The built-in choices, as (value, label): real model names only, no "automatic" entry.
 /// Model names change often, so a saved value that is not here is shown as it is.
 pub fn choices(agent: Agent) -> &'static [(&'static str, &'static str)] {
     match agent {
         Agent::Claude => &[
-            ("", "Account default"),
             ("claude-fable-5-2", "Fable 5.2"),
             ("claude-opus-5-5", "Opus 5.5"),
             ("claude-sonnet-5-5", "Sonnet 5.5"),
             ("claude-haiku-5-5", "Haiku 5.5"),
         ],
-        Agent::Codex => &[("", "Account default"), ("gpt-6.1-sol", "GPT-6.1 Sol")],
+        Agent::Codex => &[("gpt-6.1-sol", "GPT-6.1 Sol")],
         Agent::OpenCode => &[
-            ("", "Provider default"),
             ("anthropic/claude-opus-5-5", "Anthropic Opus 5.5"),
             ("anthropic/claude-sonnet-5-5", "Anthropic Sonnet 5.5"),
             ("anthropic/claude-haiku-5-5", "Anthropic Haiku 5.5"),
@@ -622,9 +673,40 @@ mod tests {
     }
 
     #[test]
-    fn every_agent_offers_unset_first() {
+    fn every_agent_offers_real_models_only() {
+        let t = TempDir::new();
+        let d = dirs(&t);
         for a in Agent::ALL {
-            assert_eq!(choices(a)[0].0, "");
+            assert!(!d.choices(a).is_empty());
+            assert!(d.choices(a).iter().all(|(v, _)| !v.is_empty()), "{a:?}");
         }
+    }
+
+    #[test]
+    fn codex_lists_the_models_its_own_cache_offers() {
+        let t = TempDir::new();
+        let d = dirs(&t);
+        // No cache: the built-in list.
+        assert_eq!(d.choices(Agent::Codex).len(), choices(Agent::Codex).len());
+        std::fs::create_dir_all(&d.codex).unwrap();
+        std::fs::write(
+            d.codex.join("models_cache.json"),
+            r#"{"models":[
+                {"slug":"gpt-6-luna","display_name":"GPT-6-Luna","visibility":"list","priority":6},
+                {"slug":"gpt-reserve","display_name":"Hidden","visibility":"hide","priority":5},
+                {"slug":"gpt-6.1-sol","display_name":"GPT-6.1-Sol","visibility":"list","priority":1},
+                {"slug":"bad name","visibility":"list","priority":2}
+            ]}"#,
+        )
+        .unwrap();
+        let got: Vec<String> = d
+            .choices(Agent::Codex)
+            .into_iter()
+            .map(|(v, _)| v)
+            .collect();
+        assert_eq!(got, ["gpt-6.1-sol", "gpt-6-luna"]);
+        // Unreadable cache: back to the built-in list.
+        std::fs::write(d.codex.join("models_cache.json"), "{").unwrap();
+        assert_eq!(d.choices(Agent::Codex).len(), choices(Agent::Codex).len());
     }
 }

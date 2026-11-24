@@ -6,7 +6,7 @@
 
 use crate::app::App;
 use crate::system::ai::{self, Agent, AiState};
-use crate::system::ai_model::{choices, Dirs};
+use crate::system::ai_model::Dirs;
 use crate::ui::{self, actions, job_view, window::Window};
 
 use adw::prelude::*;
@@ -187,29 +187,27 @@ fn card(
 
     body.append(&sign_in_chip(dirs.signed_in(agent)));
 
-    if is_chosen {
-        if app.visible("agent").is_some() {
-            let open = gtk::Button::with_label("Open");
+    // Open starts this assistant. One that is not yet in use is made so first.
+    let can_open = app.visible("agent").is_some();
+    if can_open && (is_chosen || app.visible("ai-pick").is_some()) {
+        let open = gtk::Button::with_label("Open");
+        open.add_css_class("pill");
+        if is_chosen {
             open.add_css_class("suggested-action");
-            open.add_css_class("pill");
-            open.set_halign(gtk::Align::Center);
-            open.connect_clicked({
-                let app = app.clone();
-                let window = window.clone();
-                move |_| actions::activate(&app, &window, "agent", HashMap::new())
-            });
-            body.append(&open);
         }
-    } else if app.visible("ai-pick").is_some() {
-        let use_it = gtk::Button::with_label("Use");
-        use_it.add_css_class("pill");
-        use_it.set_halign(gtk::Align::Center);
-        use_it.connect_clicked({
+        open.set_halign(gtk::Align::Center);
+        open.connect_clicked({
             let app = app.clone();
             let window = window.clone();
-            move |_| pick(&app, &window, agent)
+            move |_| {
+                if is_chosen {
+                    actions::activate(&app, &window, "agent", HashMap::new());
+                } else {
+                    pick_and_open(&app, &window, agent);
+                }
+            }
         });
-        body.append(&use_it);
+        body.append(&open);
     }
 
     let overlay = gtk::Overlay::new();
@@ -256,19 +254,15 @@ fn default_model(app: &Rc<App>, window: &Window, chosen: Option<Agent>) -> adw::
         if dirs.signed_in(agent) == Some(false) {
             continue;
         }
-        for (value, label) in choices(agent) {
-            entries.push((
-                agent,
-                value.to_string(),
-                format!("{} · {label}", agent.title()),
-            ));
+        for (value, label) in dirs.choices(agent) {
+            entries.push((agent, value, format!("{} · {label}", agent.title())));
         }
     }
     // A saved name the list does not know is added, so it is never lost.
     let saved = chosen.map(|a| (a, dirs.model(a).unwrap_or_default()));
     if let Some((agent, value)) = &saved {
         let listed = entries.iter().any(|(a, v, _)| a == agent && v == value);
-        if !listed && entries.iter().any(|(a, _, _)| a == agent) {
+        if !value.is_empty() && !listed && entries.iter().any(|(a, _, _)| a == agent) {
             entries.push((
                 *agent,
                 value.clone(),
@@ -338,7 +332,7 @@ fn default_model(app: &Rc<App>, window: &Window, chosen: Option<Agent>) -> adw::
 
 /// Save the choice, silently and as the user, and once it is saved offer to open the
 /// assistant. A failure (not installed, not supported yet) is shown as a message.
-fn pick(app: &Rc<App>, window: &Window, agent: Agent) {
+fn pick_and_open(app: &Rc<App>, window: &Window, agent: Agent) {
     let args = HashMap::from([("agent".to_string(), agent.id().to_string())]);
     actions::run_as_user(
         app,
@@ -351,38 +345,12 @@ fn pick(app: &Rc<App>, window: &Window, agent: Agent) {
             let window = window.clone();
             move |worked| {
                 let Some(app) = app.upgrade() else { return };
-                if worked && app.visible("agent").is_some() {
-                    offer_open(&app, &window, agent);
+                if worked {
+                    actions::activate(&app, &window, "agent", HashMap::new());
                 }
             }
         },
     );
-}
-
-fn offer_open(app: &Rc<App>, window: &Window, agent: Agent) {
-    let ask = adw::AlertDialog::new(
-        Some(&format!("Open {}?", agent.title())),
-        Some(&format!(
-            "{} is set up. It opens in VexPortal's terminal, working in /etc/nixos. \
-             Changes it makes take effect when you rebuild.",
-            agent.title()
-        )),
-    );
-    ask.add_response("later", "Later");
-    ask.add_response("open", &format!("Open {}", agent.title()));
-    ask.set_response_appearance("open", adw::ResponseAppearance::Suggested);
-    ask.set_default_response(Some("open"));
-    ask.set_close_response("later");
-    ask.connect_response(None, {
-        let app = app.clone();
-        let window = window.clone();
-        move |_, response| {
-            if response == "open" {
-                actions::activate(&app, &window, "agent", HashMap::new());
-            }
-        }
-    });
-    ask.present(Some(window.root()));
 }
 
 fn crash_mutes(app: &Rc<App>, window: &Window, state: &AiState) -> adw::PreferencesGroup {
