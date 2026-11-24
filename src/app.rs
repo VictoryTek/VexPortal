@@ -28,6 +28,8 @@ pub struct App {
     /// Whether the AI assistant was waiting for a reboot when last checked, so the
     /// prompt comes once, when a rebuild installs it.
     ai_reboot: Cell<bool>,
+    /// Likewise for a rebuilt hostname the running system does not have yet.
+    hostname_reboot: Cell<bool>,
     pub window: RefCell<Option<Window>>,
 }
 
@@ -83,6 +85,12 @@ impl App {
         !self.ai_reboot.replace(now) && now
     }
 
+    /// True once, when a rebuild has just set a hostname that only a reboot applies.
+    fn hostname_reboot_became_needed(&self) -> bool {
+        let now = self.state.borrow().hostname_reboot;
+        !self.hostname_reboot.replace(now) && now
+    }
+
     pub fn jobs(&self) -> Vec<Rc<Job>> {
         self.jobs.borrow().clone()
     }
@@ -105,6 +113,14 @@ impl App {
                 window.jobs_changed(finished);
                 if finished && app.ai_reboot_became_needed() {
                     pages::offer_ai_reboot(&app, &window);
+                } else if finished && app.hostname_reboot_became_needed() {
+                    pages::ask_reboot(
+                        &app,
+                        &window,
+                        "Reboot to apply the new hostname?",
+                        "The rebuild saved the new hostname, but this system keeps its old \
+                         name until it restarts. Unsaved work in other applications is lost.",
+                    );
                 }
             }
         });
@@ -221,11 +237,14 @@ pub fn build(application: &adw::Application) {
         }
     };
 
+    let state = SystemState::read();
     let app = Rc::new(App {
         catalog,
         facts,
         variant,
-        state: RefCell::new(SystemState::read()),
+        // Already pending at startup is not news, so no prompt for it.
+        hostname_reboot: Cell::new(state.hostname_reboot),
+        state: RefCell::new(state),
         client: Client::start(),
         router: RefCell::new(Router::default()),
         jobs: RefCell::new(Vec::new()),

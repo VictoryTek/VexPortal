@@ -97,16 +97,21 @@ fn finish_installing(app: &Rc<App>, window: &Window, reboot: bool) -> adw::Prefe
 
 /// Asked once, when a rebuild has just installed the assistant.
 pub fn offer_reboot(app: &Rc<App>, window: &Window) {
+    ask_reboot(
+        app,
+        window,
+        "Reboot to finish setting up the AI Assistant?",
+        "The AI Assistant is installed. Its crash notifications and theme sync start \
+         after a reboot. Unsaved work in other applications is lost.",
+    );
+}
+
+/// Offer a reboot, once, with `heading` and `body` saying why.
+pub fn ask_reboot(app: &Rc<App>, window: &Window, heading: &str, body: &str) {
     if app.visible("reboot").is_none() {
         return;
     }
-    let ask = adw::AlertDialog::new(
-        Some("Reboot to finish setting up the AI Assistant?"),
-        Some(
-            "The AI Assistant is installed. Its crash notifications and theme sync start \
-             after a reboot. Unsaved work in other applications is lost.",
-        ),
-    );
+    let ask = adw::AlertDialog::new(Some(heading), Some(body));
     ask.add_response("later", "Later");
     ask.add_response("reboot", "Reboot Now");
     ask.set_response_appearance("reboot", adw::ResponseAppearance::Destructive);

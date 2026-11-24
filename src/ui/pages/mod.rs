@@ -23,6 +23,7 @@ use std::rc::Rc;
 pub const OVERVIEW: &str = "__overview";
 pub const ACTIVITY: &str = "__activity";
 
+pub use ai::ask_reboot;
 pub use ai::offer_reboot as offer_ai_reboot;
 pub use tailscale::stop_sign_in as stop_tailscale_sign_in;
 

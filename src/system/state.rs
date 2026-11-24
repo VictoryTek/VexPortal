@@ -27,6 +27,8 @@ const REBUILD_INPUTS: [&str; 7] = [
 #[derive(Debug, Clone, Default)]
 pub struct SystemState {
     pub hostname: Option<String>,
+    /// The rebuilt name is not the running one: it takes effect on the next boot.
+    pub hostname_reboot: bool,
     /// The generation number the `system` profile points at.
     pub generation: Option<u32>,
     /// True when the running kernel and system differ from the activated one, i.e. a
@@ -76,11 +78,17 @@ impl SystemState {
                 Err(e) => log::warn!("could not read {file}: {e}"),
             }
         }
+        let rebuild_needed = rebuild_needed();
         Self {
             hostname: read_hostname(),
+            hostname_reboot: hostname_needs_reboot(
+                read_file_trimmed("/etc/hostname").as_deref(),
+                read_file_trimmed("/proc/sys/kernel/hostname").as_deref(),
+                rebuild_needed,
+            ),
             generation: read_generation(),
             reboot_pending: reboot_pending(),
-            rebuild_needed: rebuild_needed(),
+            rebuild_needed,
             settings,
             features_text: std::fs::read_to_string(FEATURES_FILE).unwrap_or_default(),
             services_text: std::fs::read_to_string(SERVICES_FILE).unwrap_or_default(),
@@ -159,11 +167,27 @@ impl Settings {
     }
 }
 
+/// The configured (static) name, falling back to the running one. A rebuild writes
+/// `/etc/hostname` but does not rename the running kernel, so the kernel name can still
+/// be the old one until a reboot and would make a saved change look undone.
 fn read_hostname() -> Option<String> {
-    std::fs::read_to_string("/proc/sys/kernel/hostname")
-        .ok()
-        .map(|h| h.trim().to_string())
-        .filter(|h| !h.is_empty())
+    read_file_trimmed("/etc/hostname").or_else(|| read_file_trimmed("/proc/sys/kernel/hostname"))
+}
+
+fn read_file_trimmed(path: &str) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// A rebuild has set a name the running system does not have yet. Not while a rebuild
+/// is still waiting: the two differ then too, and a reboot would not help.
+fn hostname_needs_reboot(
+    configured: Option<&str>,
+    running: Option<&str>,
+    rebuild_needed: bool,
+) -> bool {
+    !rebuild_needed && matches!((configured, running), (Some(c), Some(r)) if c != r)
 }
 
 /// The profile symlink is `system-<n>-link`, which gives the generation number without
@@ -243,6 +267,15 @@ mod tests {
         assert_eq!(with(3600 * 5).lock_age_label().unwrap(), "5 hours ago");
         assert_eq!(with(3600 * 24).lock_age_label().unwrap(), "1 day ago");
         assert_eq!(with(3600 * 24 * 9).lock_age_label().unwrap(), "9 days ago");
+    }
+
+    #[test]
+    fn a_reboot_is_needed_only_once_the_rebuild_has_set_a_different_name() {
+        assert!(hostname_needs_reboot(Some("new"), Some("old"), false));
+        assert!(!hostname_needs_reboot(Some("new"), Some("new"), false));
+        assert!(!hostname_needs_reboot(Some("new"), Some("old"), true));
+        assert!(!hostname_needs_reboot(None, Some("old"), false));
+        assert!(!hostname_needs_reboot(Some("new"), None, false));
     }
 
     #[test]

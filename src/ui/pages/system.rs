@@ -12,7 +12,9 @@ const CUSTOM: [&str; 3] = ["switch", "build", "set-hostname"];
 
 pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     let page = adw::PreferencesPage::new();
-    let mut identity = identity_group(app, window);
+    if let Some(identity) = identity_group(app, window) {
+        page.add(&identity);
+    }
 
     for group in ui::action_groups(app, window, "system", &CUSTOM) {
         let title = group.title();
@@ -26,16 +28,7 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
                 }
             }
         }
-        // Identity sits just before Power, matching the catalog's order.
-        if title == "Power" {
-            if let Some(identity) = identity.take() {
-                page.add(&identity);
-            }
-        }
         page.add(&group);
-    }
-    if let Some(identity) = identity {
-        page.add(&identity);
     }
 
     ui::page(app, window, "System", &page)
