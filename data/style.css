@@ -88,7 +88,7 @@
 /* ── AI assistant cards ───────────────────────────────────────── */
 
 .vex-agent-card {
-  padding: 22px 18px 18px 18px;
+  padding: 14px 12px 12px 12px;
   border-radius: 16px;
   background-color: alpha(currentColor, 0.05);
   border: 2px solid transparent;
@@ -106,7 +106,7 @@
 }
 
 .vex-agent-logo {
-  padding: 16px;
+  padding: 10px;
   border-radius: 9999px;
   background-color: alpha(currentColor, 0.08);
 }
@@ -143,8 +143,4 @@
 
 .vex-dot.unknown {
   opacity: 0.4;
-}
-
-.vex-model {
-  margin-top: 4px;
 }

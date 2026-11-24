@@ -36,6 +36,7 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     }
 
     let state = AiState::read();
+    page.add(&default_model(app, window, state.agent));
     page.add(&assistants(app, window, state.agent));
     // Both start `vexos-ai`, which falls back to its own zenity picker while no
     // assistant is chosen; the setup group above replaces that.
@@ -135,7 +136,7 @@ fn assistants(app: &Rc<App>, window: &Window, chosen: Option<Agent>) -> adw::Pre
     let cards = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .homogeneous(true)
-        .min_children_per_line(1)
+        .min_children_per_line(3)
         .max_children_per_line(3)
         .column_spacing(14)
         .row_spacing(14)
@@ -148,7 +149,7 @@ fn assistants(app: &Rc<App>, window: &Window, chosen: Option<Agent>) -> adw::Pre
     group
 }
 
-/// One assistant: its mark, its sign-in, its model, and the one thing to do next.
+/// One assistant: its mark, its sign-in, and the one thing to do next.
 fn card(
     app: &Rc<App>,
     window: &Window,
@@ -157,7 +158,7 @@ fn card(
     dirs: &Dirs,
 ) -> gtk::Overlay {
     let is_chosen = chosen == Some(agent);
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
     body.add_css_class("vex-agent-card");
     body.add_css_class(agent.id());
     if is_chosen {
@@ -169,7 +170,7 @@ fn card(
         "/io/github/vexportal/icons/agents/{}.svg",
         agent.id()
     ));
-    logo.set_pixel_size(40);
+    logo.set_pixel_size(28);
     let tile = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     tile.add_css_class("vex-agent-logo");
     tile.set_halign(gtk::Align::Center);
@@ -185,9 +186,6 @@ fn card(
     body.append(&maker);
 
     body.append(&sign_in_chip(dirs.signed_in(agent)));
-
-    let saved = dirs.model(agent);
-    body.append(&model_menu(window, agent, saved));
 
     if is_chosen {
         if app.visible("agent").is_some() {
@@ -246,81 +244,96 @@ fn sign_in_chip(signed_in: Option<bool>) -> gtk::Box {
     chip
 }
 
-/// The model in words: the dropdown's label for it, else the saved name as it is.
-fn model_label(agent: Agent, saved: Option<&str>) -> String {
-    let Some(value) = saved else {
-        return choices(agent)[0].1.to_string();
-    };
-    choices(agent)
-        .iter()
-        .find(|(v, _)| *v == value)
-        .map_or_else(|| value.to_string(), |(_, label)| label.to_string())
-}
-
-/// The model dropdown. A saved name the list does not know is added, so it is never lost.
-fn model_menu(window: &Window, agent: Agent, saved: Option<String>) -> gtk::DropDown {
-    let mut values: Vec<String> = choices(agent).iter().map(|(v, _)| v.to_string()).collect();
-    let mut labels: Vec<String> = choices(agent).iter().map(|(_, l)| l.to_string()).collect();
-    let current = saved.unwrap_or_default();
-    if !values.contains(&current) {
-        values.push(current.clone());
-        labels.push(format!("{current} (current)"));
+/// One default-model dropdown for the assistant in use, offering only the models of
+/// assistants that are signed in. A sign-in that cannot be told (`None`) is not hidden.
+/// Choosing another assistant's model makes that assistant the one in use.
+fn default_model(app: &Rc<App>, window: &Window, chosen: Option<Agent>) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    let dirs = Dirs::of_user();
+    // (assistant, saved value, label)
+    let mut entries: Vec<(Agent, String, String)> = Vec::new();
+    for agent in Agent::ALL {
+        if dirs.signed_in(agent) == Some(false) {
+            continue;
+        }
+        for (value, label) in choices(agent) {
+            entries.push((
+                agent,
+                value.to_string(),
+                format!("{} · {label}", agent.title()),
+            ));
+        }
     }
-    let selected = values.iter().position(|v| *v == current).unwrap_or(0);
-    let menu = gtk::DropDown::from_strings(&labels.iter().map(String::as_str).collect::<Vec<_>>());
-    menu.set_selected(selected as u32);
-    // A long saved name is cut short with an ellipsis instead of widening the card.
-    let factory = gtk::SignalListItemFactory::new();
-    factory.connect_setup(|_, item| {
-        let label = gtk::Label::new(None);
-        label.set_xalign(0.0);
-        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        label.set_max_width_chars(22);
-        if let Some(item) = item.downcast_ref::<gtk::ListItem>() {
-            item.set_child(Some(&label));
+    // A saved name the list does not know is added, so it is never lost.
+    let saved = chosen.map(|a| (a, dirs.model(a).unwrap_or_default()));
+    if let Some((agent, value)) = &saved {
+        let listed = entries.iter().any(|(a, v, _)| a == agent && v == value);
+        if !listed && entries.iter().any(|(a, _, _)| a == agent) {
+            entries.push((
+                *agent,
+                value.clone(),
+                format!("{} · {value} (current)", agent.title()),
+            ));
         }
-    });
-    factory.connect_bind(|_, item| {
-        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
-            return;
-        };
-        let text = item
-            .item()
-            .and_downcast::<gtk::StringObject>()
-            .map(|s| s.string())
-            .unwrap_or_default();
-        if let Some(label) = item.child().and_downcast::<gtk::Label>() {
-            label.set_label(&text);
-            label.set_tooltip_text(Some(&text));
-        }
-    });
-    menu.set_factory(Some(&factory));
-    menu.add_css_class("vex-model");
-    menu.set_tooltip_text(Some("Model"));
-    menu.connect_selected_notify({
+    }
+
+    let row = adw::ComboRow::builder()
+        .title("Default model")
+        .subtitle("For the assistant in use. Only signed-in assistants are listed.")
+        .build();
+    if entries.is_empty() {
+        row.set_subtitle("Sign in to an assistant to choose its model.");
+        row.set_sensitive(false);
+        group.add(&row);
+        return group;
+    }
+    // ComboRow always has something selected, so without a match (no assistant in use, or
+    // it is signed out) a placeholder takes that place and choosing any model is a change.
+    let matched =
+        saved.and_then(|(a, v)| entries.iter().position(|(ea, ev, _)| *ea == a && *ev == v));
+    let offset = usize::from(matched.is_none());
+    let mut labels: Vec<&str> = Vec::new();
+    if offset == 1 {
+        labels.push("Choose a model");
+    }
+    labels.extend(entries.iter().map(|(_, _, l)| l.as_str()));
+    row.set_model(Some(&gtk::StringList::new(&labels)));
+    let current = matched.map_or(0, |i| i + offset) as u32;
+    row.set_selected(current);
+    row.connect_selected_notify({
+        let app = app.clone();
         let window = window.clone();
-        move |menu| {
-            let value = values
-                .get(menu.selected() as usize)
-                .cloned()
-                .unwrap_or_default();
-            if value == current {
+        move |row| {
+            let index = row.selected();
+            if index == current {
                 return;
             }
+            let Some((agent, value, label)) = entries.get((index as usize).wrapping_sub(offset))
+            else {
+                return;
+            };
             let wanted = (!value.is_empty()).then_some(value.as_str());
-            match Dirs::of_user().set_model(agent, wanted) {
-                Ok(()) => window.toast(&format!(
-                    "{} will use {}",
-                    agent.title(),
-                    model_label(agent, wanted)
-                )),
+            match Dirs::of_user().set_model(*agent, wanted) {
+                Ok(()) if chosen != Some(*agent) && app.visible("ai-pick").is_some() => {
+                    let args = HashMap::from([("agent".to_string(), agent.id().to_string())]);
+                    actions::run_as_user(
+                        &app,
+                        &window,
+                        "ai-pick",
+                        args,
+                        &format!("{label} is the default"),
+                        |_| {},
+                    );
+                }
+                Ok(()) => window.toast(&format!("{label} is the default")),
                 Err(why) => window.alert("Cannot change the model", &why),
             }
-            // The page shows what the file now says, which also undoes a refused change.
+            // The page shows what the files now say, which also undoes a refused change.
             window.state_changed();
         }
     });
-    menu
+    group.add(&row);
+    group
 }
 
 /// Save the choice, silently and as the user, and once it is saved offer to open the
