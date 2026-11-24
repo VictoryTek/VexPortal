@@ -328,7 +328,7 @@ pub fn parse_shares(output: &str) -> Vec<String> {
 }
 
 /// Whether `name` is installed, looking where the daemon's tools are found.
-fn tool_present(root: &Path, name: &str) -> bool {
+pub(crate) fn tool_present(root: &Path, name: &str) -> bool {
     [
         "run/wrappers/bin",
         "run/current-system/sw/bin",

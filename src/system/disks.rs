@@ -6,9 +6,11 @@
 //! means is `vexportal_ops::{disks, zfs}`, tested without a machine.
 
 use crate::system::services::capture_within;
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use vexportal_ops::disks::{self, Disk, Inputs, LSBLK_ARGS};
+use vexportal_ops::mergerfs::{self, DF_ARGS};
 use vexportal_ops::zfs::{self, Leaf, PoolRow, LIST_ARGS};
 
 /// Asking this machine something.
@@ -53,4 +55,20 @@ pub async fn eligible() -> Result<Vec<Disk>, String> {
         pool_members: &members,
         claimed: &claimed,
     }))
+}
+
+/// `(size, used)` in bytes of each of `mounts` that is mounted, by mount point.
+pub async fn usage(mounts: &[String]) -> HashMap<String, (u64, u64)> {
+    let mut args = owned(&DF_ARGS);
+    args.extend(mounts.iter().cloned());
+    // `df` exits non-zero when one path is missing but still answers for the rest.
+    capture_within("df", &args, LOCAL)
+        .await
+        .map(|out| {
+            mergerfs::parse_df(&out)
+                .into_iter()
+                .map(|(mount, size, used)| (mount, (size, used)))
+                .collect()
+        })
+        .unwrap_or_default()
 }

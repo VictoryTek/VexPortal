@@ -4,6 +4,7 @@ pub mod actions;
 pub mod ansi;
 pub mod arg_dialog;
 pub mod job_view;
+pub mod mergerfs_dialog;
 pub mod pages;
 pub mod pool_dialog;
 pub mod remote_attach;

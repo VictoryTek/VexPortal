@@ -15,9 +15,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use vexportal_ops::zfs::{valid_name, valid_storage_id, Layout};
 
-type Hook = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+pub(crate) type Hook = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
-fn fire(hook: &Hook) {
+pub(crate) fn fire(hook: &Hook) {
     let f = hook.borrow().clone();
     if let Some(f) = f {
         f();
@@ -25,15 +25,15 @@ fn fire(hook: &Hook) {
 }
 
 /// A list of the free disks to tick, one or several.
-struct Picker {
-    group: adw::PreferencesGroup,
+pub(crate) struct Picker {
+    pub(crate) group: adw::PreferencesGroup,
     rows: Rc<RefCell<Vec<(String, gtk::CheckButton)>>>,
 }
 
 impl Picker {
-    fn new(single: bool, changed: &Hook) -> Rc<Self> {
+    pub(crate) fn new(title: &str, single: bool, changed: &Hook) -> Rc<Self> {
         let group = adw::PreferencesGroup::builder()
-            .title(if single { "New disk" } else { "Disks" })
+            .title(title)
             .description(
                 "Only disks with nothing mounted and in no pool are listed. \
                  Every disk you choose is erased.",
@@ -105,7 +105,7 @@ impl Picker {
         picker
     }
 
-    fn selected(&self) -> Vec<String> {
+    pub(crate) fn selected(&self) -> Vec<String> {
         self.rows
             .borrow()
             .iter()
@@ -115,13 +115,13 @@ impl Picker {
     }
 }
 
-struct Shell {
-    dialog: adw::Dialog,
-    page: adw::PreferencesPage,
-    run: gtk::Button,
+pub(crate) struct Shell {
+    pub(crate) dialog: adw::Dialog,
+    pub(crate) page: adw::PreferencesPage,
+    pub(crate) run: gtk::Button,
 }
 
-fn shell(window: &Window, title: &str, run_label: &str, destructive: bool) -> Shell {
+pub(crate) fn shell(window: &Window, title: &str, run_label: &str, destructive: bool) -> Shell {
     let page = adw::PreferencesPage::new();
     let run = gtk::Button::with_label(run_label);
     run.add_css_class(if destructive {
@@ -153,7 +153,7 @@ fn shell(window: &Window, title: &str, run_label: &str, destructive: bool) -> Sh
     Shell { dialog, page, run }
 }
 
-fn intro(page: &adw::PreferencesPage, text: &str) {
+pub(crate) fn intro(page: &adw::PreferencesPage, text: &str) {
     let group = adw::PreferencesGroup::new();
     let row = adw::ActionRow::builder()
         .title(text)
@@ -164,7 +164,7 @@ fn intro(page: &adw::PreferencesPage, text: &str) {
     page.add(&group);
 }
 
-fn confirm_row(page: &adw::PreferencesPage, pool: &str) -> adw::EntryRow {
+pub(crate) fn confirm_row(page: &adw::PreferencesPage, pool: &str) -> adw::EntryRow {
     let entry = adw::EntryRow::builder()
         .title(format!("Type {pool} to confirm"))
         .build();
@@ -256,7 +256,7 @@ pub fn create(app: &Rc<App>, window: &Window) {
     basics.add(&storage);
     sh.page.add(&basics);
 
-    let picker = Picker::new(false, &hook);
+    let picker = Picker::new("Disks", false, &hook);
     sh.page.add(&picker.group);
     let confirm = confirm_row(&sh.page, "the pool name");
 
@@ -355,7 +355,7 @@ pub fn add(app: &Rc<App>, window: &Window, pool: &str) {
     let group = adw::PreferencesGroup::new();
     group.add(&layout);
     sh.page.add(&group);
-    let picker = Picker::new(false, &hook);
+    let picker = Picker::new("Disks", false, &hook);
     sh.page.add(&picker.group);
     let confirm = confirm_row(&sh.page, pool);
 
@@ -436,7 +436,7 @@ pub fn one_disk(app: &Rc<App>, window: &Window, replace: bool, pool: &str, devic
         },
     );
     let hook: Hook = Rc::default();
-    let picker = Picker::new(true, &hook);
+    let picker = Picker::new("New disk", true, &hook);
     sh.page.add(&picker.group);
     let confirm = confirm_row(&sh.page, pool);
     *hook.borrow_mut() = Some(Rc::new({

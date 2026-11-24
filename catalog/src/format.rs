@@ -38,6 +38,7 @@ impl Format {
             Format::PoolName => "a pool name such as `tank`: a letter, then letters, digits and . _ : -",
             Format::VdevName => "a disk path under /dev, or the number of a missing disk",
             Format::DiskIdList => "disk names from /dev/disk/by-id, separated by commas",
+            Format::PoolMount => "a pool disk such as `/mnt/disk1` or `/mnt/parity1`",
             Format::StorageId => "a storage ID such as `vm-store`",
             Format::Url => "an address starting with http:// or https://",
             Format::Ipv4 => "an IPv4 address such as `192.168.1.100`",
@@ -86,6 +87,7 @@ impl Format {
             Format::PoolName => is_pool_name(value),
             Format::VdevName => is_vdev_name(value),
             Format::DiskIdList => is_disk_id_list(value),
+            Format::PoolMount => is_pool_mount(value),
             Format::StorageId => is_storage_id(value),
             Format::Url => is_url(value),
             Format::Ipv4 => is_ipv4(value),
@@ -283,6 +285,22 @@ fn is_disk_id(v: &str) -> bool {
 fn is_disk_id_list(v: &str) -> bool {
     let parts: Vec<&str> = v.split(',').collect();
     parts.len() <= 64 && parts.iter().all(|p| is_disk_id(p))
+}
+
+/// `/mnt/disk<N>` or `/mnt/parity<N>`, the only mount points the bulk pool uses.
+fn is_pool_mount(v: &str) -> bool {
+    let Some(rest) = v.strip_prefix("/mnt/") else {
+        return false;
+    };
+    let digits = rest
+        .strip_prefix("disk")
+        .or_else(|| rest.strip_prefix("parity"));
+    digits.is_some_and(|d| {
+        !d.is_empty()
+            && d.len() <= 4
+            && !d.starts_with('0')
+            && d.chars().all(|c| c.is_ascii_digit())
+    })
 }
 
 fn is_storage_id(v: &str) -> bool {
@@ -634,12 +652,34 @@ mod tests {
                 Format::Host,
                 Format::ShareName,
                 Format::Gid,
+                Format::PoolMount,
             ] {
                 assert!(
                     format.validate(probe).is_err(),
                     "{format:?} accepted {probe:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn pool_mounts_are_only_the_ones_the_bulk_pool_makes() {
+        for ok in ["/mnt/disk1", "/mnt/disk12", "/mnt/parity1"] {
+            assert!(Format::PoolMount.validate(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "/mnt/disk",
+            "/mnt/disk0",
+            "/mnt/disk01",
+            "/mnt/disk1/",
+            "/mnt/disk1/x",
+            "/mnt/data1",
+            "/storage",
+            "mnt/disk1",
+            "/mnt/disk1 ",
+            "/mnt/disk99999",
+        ] {
+            assert!(Format::PoolMount.validate(bad).is_err(), "{bad}");
         }
     }
 

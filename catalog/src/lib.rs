@@ -142,6 +142,8 @@ pub enum Format {
     VdevName,
     /// Comma-separated names from `/dev/disk/by-id`.
     DiskIdList,
+    /// A disk of the bulk pool: `/mnt/disk<N>` or `/mnt/parity<N>`.
+    PoolMount,
     /// A Proxmox storage ID.
     StorageId,
     /// An `http://` or `https://` address a person types, with no space, quote,

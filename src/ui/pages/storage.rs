@@ -4,11 +4,12 @@
 use crate::app::App;
 use crate::system::disks;
 use crate::system::remote::{mount_state, MountState};
-use crate::ui::{self, actions, pool_dialog, window::Window};
+use crate::ui::{self, actions, mergerfs_dialog, pool_dialog, window::Window};
 
 use adw::prelude::*;
 use std::collections::HashMap;
 use std::rc::Rc;
+use vexportal_ops::mergerfs;
 use vexportal_ops::remote;
 use vexportal_ops::zfs::{Leaf, PoolRow};
 
@@ -29,6 +30,16 @@ const ZFS: [&str; 10] = [
     "zfs-clear",
 ];
 
+/// Drawn by the Bulk Pool group below rather than as plain rows.
+const BULK: [&str; 6] = [
+    "mergerfs-create",
+    "mergerfs-add",
+    "mergerfs-remove",
+    "mergerfs-destroy",
+    "mergerfs-sync",
+    "mergerfs-scrub",
+];
+
 pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     let page = adw::PreferencesPage::new();
     let catalog_page = app.catalog.page("storage");
@@ -37,11 +48,15 @@ pub fn build(app: &Rc<App>, window: &Window) -> adw::NavigationPage {
     }
     let mut skip = vec![ATTACH, DETACH];
     skip.extend(ZFS);
+    skip.extend(BULK);
     for group in ui::action_groups(app, window, "storage", &skip) {
         page.add(&group);
     }
     if app.visible("zfs-create").is_some() {
         page.add(&zfs_group(app, window));
+    }
+    if app.visible("mergerfs-create").is_some() {
+        page.add(&bulk_group(app, window));
     }
     if let Some(attach) = app.visible(ATTACH) {
         page.add(&remote_group(app, window, attach));
@@ -321,5 +336,188 @@ fn pool_row(app: &Rc<App>, window: &Window, pool: &PoolRow, leaves: &[Leaf]) -> 
         }
         row.add_row(&disk);
     }
+    row
+}
+
+// ── Bulk pool ─────────────────────────────────────────────────────────────────
+
+fn dim_row(title: &str, subtitle: &str) -> adw::ActionRow {
+    let row = adw::ActionRow::builder()
+        .title(title)
+        .subtitle(subtitle)
+        .use_markup(false)
+        .build();
+    row.set_title_lines(0);
+    row.set_subtitle_lines(0);
+    row.add_css_class("dim-label");
+    row
+}
+
+fn used_of(size: u64, used: u64) -> String {
+    format!(
+        "{} used of {}",
+        vexportal_ops::disks::size_label(used),
+        vexportal_ops::disks::size_label(size)
+    )
+}
+
+/// The mergerfs pool: a button to create one, or the pool with its disks.
+fn bulk_group(app: &Rc<App>, window: &Window) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title("Bulk Pool")
+        .description(
+            "Disks of any size combined into one pool at /storage, with optional SnapRAID \
+             parity. Anything that erases a disk asks you to type storage. Changes apply on \
+             the next rebuild.",
+        )
+        .build();
+    let text = app.state.borrow().pool_text.clone();
+    if text.trim().is_empty() {
+        group.add(&button_row(
+            "Create Pool",
+            "Combine mixed-size disks into one pool. Every chosen disk is erased.",
+            "Create…",
+            false,
+            {
+                let (app, window) = (app.clone(), window.clone());
+                move || mergerfs_dialog::create(&app, &window)
+            },
+        ));
+        return group;
+    }
+    match mergerfs::parse(&text) {
+        Ok(pool) => group.add(&bulk_row(app, window, &pool)),
+        Err(why) => group.add(&dim_row("The pool cannot be managed here", &why)),
+    }
+    group
+}
+
+fn bulk_row(app: &Rc<App>, window: &Window, pool: &mergerfs::Pool) -> adw::ExpanderRow {
+    let row = adw::ExpanderRow::builder()
+        .title(mergerfs::UNION)
+        .subtitle(format!(
+            "{} content disk(s), {} parity disk(s)",
+            pool.content.len(),
+            pool.parity.len()
+        ))
+        .use_markup(false)
+        .build();
+    row.add_prefix(&gtk::Image::from_icon_name("drive-multidisk-symbolic"));
+    if pool.parity.is_empty() {
+        row.add_suffix(&ui::pill(
+            "No parity",
+            "destructive",
+            "A failed disk loses the files on it",
+        ));
+        row.add_row(&dim_row(
+            "No parity disks",
+            "A failed disk would lose its files. Add a parity disk to protect the pool.",
+        ));
+    }
+
+    let run = {
+        let (app, window) = (app.clone(), window.clone());
+        move |id: &'static str, pairs: &[(&str, &str)]| {
+            let preset = pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            actions::activate(&app, &window, id, preset);
+        }
+    };
+    let run = Rc::new(run);
+
+    let mut labels: Vec<(String, gtk::Label)> = Vec::new();
+    for (role, members) in [("Content", &pool.content), ("Parity", &pool.parity)] {
+        for member in members {
+            let disk = adw::ActionRow::builder()
+                .title(&member.mount)
+                .subtitle(format!("{role} · {} · {}", member.fstype, member.uuid))
+                .use_markup(false)
+                .build();
+            disk.add_prefix(&gtk::Image::from_icon_name("drive-harddisk-symbolic"));
+            let usage = gtk::Label::new(Some("Checking…"));
+            usage.add_css_class("dim-label");
+            usage.set_valign(gtk::Align::Center);
+            disk.add_suffix(&usage);
+            labels.push((member.mount.clone(), usage));
+            let remove = gtk::Button::with_label("Remove…");
+            remove.set_valign(gtk::Align::Center);
+            remove.add_css_class("destructive-action");
+            remove.connect_clicked({
+                let (run, mount) = (run.clone(), member.mount.clone());
+                move |_| run("mergerfs-remove", &[("mount", &mount)])
+            });
+            disk.add_suffix(&remove);
+            row.add_row(&disk);
+        }
+    }
+
+    row.add_row(&button_row(
+        "Add Disk",
+        "More space, or a parity disk. The disk is erased.",
+        "Add…",
+        true,
+        {
+            let (app, window) = (app.clone(), window.clone());
+            move || mergerfs_dialog::add(&app, &window)
+        },
+    ));
+    if !pool.parity.is_empty() {
+        for (id, title, subtitle, label) in [
+            (
+                "mergerfs-sync",
+                "Sync Parity",
+                "Bring the parity up to date after files changed. Takes hours; can be stopped and resumed.",
+                "Sync…",
+            ),
+            (
+                "mergerfs-scrub",
+                "Scrub",
+                "Read part of the array to find silent corruption. Takes hours.",
+                "Scrub…",
+            ),
+        ] {
+            if app.visible(id).is_some() {
+                row.add_row(&button_row(title, subtitle, label, false, {
+                    let run = run.clone();
+                    move || run(id, &[])
+                }));
+            }
+        }
+    }
+    row.add_row(&button_row(
+        "Destroy Pool",
+        "Unmount the pool and remove it from the configuration. The disks keep their data.",
+        "Destroy…",
+        true,
+        {
+            let run = run.clone();
+            move || run("mergerfs-destroy", &[])
+        },
+    ));
+
+    glib::spawn_future_local({
+        let row = row.clone();
+        let mut mounts: Vec<String> = vec![mergerfs::UNION.to_string()];
+        mounts.extend(labels.iter().map(|(m, _)| m.clone()));
+        async move {
+            let usage = disks::usage(&mounts).await;
+            for (mount, label) in &labels {
+                match usage.get(mount) {
+                    Some((size, used)) => {
+                        label.set_text(&used_of(*size, *used));
+                        label.remove_css_class("dim-label");
+                    }
+                    None => label.set_text("Not mounted"),
+                }
+            }
+            let state = match usage.get(mergerfs::UNION) {
+                Some((size, used)) => used_of(*size, *used),
+                None => "not mounted".to_string(),
+            };
+            row.set_subtitle(&format!("{} · {state}", row.subtitle()));
+        }
+    });
     row
 }

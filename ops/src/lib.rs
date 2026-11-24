@@ -22,6 +22,7 @@ pub mod disks;
 pub mod features;
 pub mod fsutil;
 pub mod gitrepo;
+pub mod mergerfs;
 pub mod nixedit;
 pub mod plex;
 pub mod rebuild;
@@ -112,6 +113,12 @@ pub const NATIVE_OPERATIONS: &[&str] = &[
     "zfs-detach",
     "zfs-scrub",
     "zfs-clear",
+    "mergerfs-create",
+    "mergerfs-add",
+    "mergerfs-remove",
+    "mergerfs-destroy",
+    "mergerfs-sync",
+    "mergerfs-scrub",
 ];
 
 /// Read-only operations that answer with JSON instead of starting a job.
@@ -197,6 +204,12 @@ pub async fn run<R: Runner>(op_id: &str, ctx: &Ctx<'_, R>) -> Option<i32> {
         "zfs-detach" => zfs::detach(ctx).await,
         "zfs-scrub" => zfs::scrub(ctx).await,
         "zfs-clear" => zfs::clear(ctx).await,
+        "mergerfs-create" => mergerfs::create(ctx).await,
+        "mergerfs-add" => mergerfs::add(ctx).await,
+        "mergerfs-remove" => mergerfs::remove(ctx).await,
+        "mergerfs-destroy" => mergerfs::destroy(ctx).await,
+        "mergerfs-sync" => mergerfs::sync(ctx).await,
+        "mergerfs-scrub" => mergerfs::scrub(ctx).await,
         _ => {
             debug_assert!(!is_native(op_id), "`{op_id}` is listed but has no handler");
             return None;

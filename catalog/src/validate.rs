@@ -606,6 +606,58 @@ widget = \"text\"
     }
 
     #[test]
+    fn every_bulk_pool_action_that_erases_or_unmounts_wants_storage_typed() {
+        let c = catalog();
+        let cases: [(&str, Vec<(&str, &str)>); 4] = [
+            ("mergerfs-create", vec![("disks", "ata-A")]),
+            (
+                "mergerfs-add",
+                vec![("role", "content"), ("disks", "ata-A")],
+            ),
+            ("mergerfs-remove", vec![("mount", "/mnt/disk1")]),
+            ("mergerfs-destroy", vec![]),
+        ];
+        for (id, base) in &cases {
+            assert!(
+                build(&c, id, &answers(base)).is_err(),
+                "{id} ran with no confirmation"
+            );
+            let mut wrong = base.clone();
+            wrong.push(("confirm", "yes"));
+            assert!(
+                matches!(
+                    build(&c, id, &answers(&wrong)),
+                    Err(ValidationError::ConfirmMismatch { .. })
+                ),
+                "{id} accepted a wrong confirmation"
+            );
+            let mut right = base.clone();
+            right.push(("confirm", "storage"));
+            assert!(build(&c, id, &answers(&right)).is_ok(), "{id}");
+        }
+        // Parity is optional, and a disk of the pool is only ever a /mnt/diskN or /mnt/parityN.
+        let create = [("disks", "ata-A"), ("confirm", "storage")];
+        assert!(build(&c, "mergerfs-create", &answers(&create)).is_ok());
+        assert!(build(
+            &c,
+            "mergerfs-create",
+            &answers(&[create[0], create[1], ("parity", "ata-B")])
+        )
+        .is_ok());
+        for bad in ["/storage", "/mnt/disk1/x", "/etc/passwd", "; id"] {
+            assert!(
+                build(
+                    &c,
+                    "mergerfs-remove",
+                    &answers(&[("mount", bad), ("confirm", "storage")])
+                )
+                .is_err(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
     fn the_assistant_actions_check_their_answers() {
         let c = catalog();
         let ok = build_for_terminal(

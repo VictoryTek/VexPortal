@@ -1427,20 +1427,154 @@ confirm = "Only clear the counters after fixing the cause, such as a cable or a 
   widget = "text"
   format = "pool-name"
 
+# The bulk pool: mergerfs over mixed-size disks, with optional SnapRAID parity. The Storage
+# page shows the pool and its disks itself. Anything that erases a disk is checked again by
+# the daemon against the disks that are really free at that moment, and asks for `storage`
+# to be typed. One pool per host: vexos-nix has a single mergerfs pool at /storage.
+
 [[action]]
-id = "mergerfs-pool"
-command = ["mergerfs-pool"]
-implements = "mergerfs-pool"
-title = "Bulk Pool Manager"
-blurb = "Create a mergerfs + SnapRAID pool from mixed-size drives, add or remove disks, or run a parity sync."
+id = "mergerfs-create"
+backend = "native"
+title = "Create Bulk Pool"
+blurb = "Combine mixed-size disks into one pool at /storage, with optional SnapRAID parity. Every chosen disk is erased."
 icon = "drive-multidisk-symbolic"
 page = "storage"
-group = "Pools"
+group = "Bulk Pool"
 roles = ["server", "headless-server"]
 risk = "destructive"
-confirm = "The bulk pool manager can format disks. It asks you to choose disks and confirm before formatting anything — read each step carefully."
-mode = "terminal"
-mode_reason = "A menu-driven wizard that walks through disks and parity layout."
+confirm = "The chosen disks are erased completely and cannot be recovered."
+rebuild = true
+
+  [[action.params]]
+  name = "fstype"
+  label = "Filesystem for each disk"
+  default = "ext4"
+  widget = "choice"
+  choices = ["ext4", "xfs"]
+
+  [[action.params]]
+  name = "disks"
+  label = "Content disks"
+  required = true
+  widget = "text"
+  format = "disk-id-list"
+
+  [[action.params]]
+  name = "parity"
+  label = "Parity disks"
+  help = "Optional. Each must be at least as large as the largest content disk."
+  widget = "text"
+  format = "disk-id-list"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type storage to confirm"
+  required = true
+  widget = "confirm"
+  expect = "storage"
+
+[[action]]
+id = "mergerfs-add"
+backend = "native"
+title = "Add a Disk to the Bulk Pool"
+blurb = "Add one disk to the pool, as more space or as a SnapRAID parity disk. The disk is erased."
+icon = "list-add-symbolic"
+page = "storage"
+group = "Bulk Pool"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "The new disk is erased completely and cannot be recovered."
+rebuild = true
+
+  [[action.params]]
+  name = "role"
+  label = "What the disk is for"
+  required = true
+  widget = "choice"
+  choices = ["content", "parity"]
+
+  [[action.params]]
+  name = "disks"
+  label = "New disk"
+  required = true
+  widget = "text"
+  format = "disk-id-list"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type storage to confirm"
+  required = true
+  widget = "confirm"
+  expect = "storage"
+
+[[action]]
+id = "mergerfs-remove"
+backend = "native"
+title = "Remove a Disk from the Bulk Pool"
+blurb = "Take one disk out of the pool's configuration. Its data stays on the disk and is not erased."
+icon = "list-remove-symbolic"
+page = "storage"
+group = "Bulk Pool"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "Files on that disk stop appearing in the pool. Removing a parity disk lowers the protection."
+rebuild = true
+
+  [[action.params]]
+  name = "mount"
+  label = "Disk"
+  required = true
+  widget = "text"
+  format = "pool-mount"
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type storage to confirm"
+  required = true
+  widget = "confirm"
+  expect = "storage"
+
+[[action]]
+id = "mergerfs-destroy"
+backend = "native"
+title = "Destroy the Bulk Pool"
+blurb = "Unmount the pool and remove it from the configuration. The disks keep their data and are not erased."
+icon = "user-trash-symbolic"
+page = "storage"
+group = "Bulk Pool"
+roles = ["server", "headless-server"]
+risk = "destructive"
+confirm = "Anything using /storage, such as shares, containers and services, loses it."
+rebuild = true
+
+  [[action.params]]
+  name = "confirm"
+  label = "Type storage to confirm"
+  required = true
+  widget = "confirm"
+  expect = "storage"
+
+[[action]]
+id = "mergerfs-sync"
+backend = "native"
+title = "Sync Parity"
+blurb = "Bring the SnapRAID parity up to date after files changed. It can take hours and can be stopped and resumed."
+icon = "emblem-synchronizing-symbolic"
+page = "storage"
+group = "Bulk Pool"
+roles = ["server", "headless-server"]
+risk = "medium"
+
+[[action]]
+id = "mergerfs-scrub"
+backend = "native"
+title = "Scrub the Bulk Pool"
+blurb = "Read part of the array to find silent corruption. It can take hours."
+icon = "emblem-synchronizing-symbolic"
+page = "storage"
+group = "Bulk Pool"
+roles = ["server", "headless-server"]
+risk = "medium"
 
 [[action]]
 id = "remote-storage-attach"
@@ -1733,6 +1867,10 @@ reason = "Updates and upgrades are handled by Up, not VexPortal."
 [[excluded]]
 name = "zfs-pool"
 reason = "Replaced by the ZFS Pools group on the Storage page: the daemon creates, imports, destroys, replaces, adds, attaches, detaches, scrubs and clears pools, with a disk picker and a typed confirmation."
+
+[[excluded]]
+name = "mergerfs-pool"
+reason = "Replaced by the Bulk Pool group on the Storage page: the daemon creates, extends, shrinks and destroys the pool and runs SnapRAID sync and scrub, with a disk picker and a typed confirmation."
 
 [[excluded]]
 name = "deploy"
